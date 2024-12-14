@@ -1,0 +1,21 @@
+{
+  "name": "quiz-game",
+  "version": "1.0.0",
+  "description": "A quiz game webapp that dynamically generates questions using GPT-4o.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node backend/server.js",
+    "build": "cd frontend && npm install && npm run build"
+  },
+  "dependencies": {
+    "axios": "^0.21.4",
+    "concurrently": "^6.2.1",
+    "express": "^4.17.1",
+    "openai": "^3.0.0",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "react-scripts": "4.0.3"
+  },
+  "author": "",
+  "license": "ISC"
+}
