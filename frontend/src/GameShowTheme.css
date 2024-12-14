@@ -1,0 +1,82 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+body {
+  background-color: #2b1055; /* Deep purple background */
+  color: #ffd700; /* Gold text color */
+  font-family: 'Press Start 2P', cursive;
+  margin: 0;
+  padding: 0;
+}
+
+.game-show-container {
+  text-align: center;
+  padding: 20px;
+}
+
+.game-show-header {
+  font-size: 3em;
+  font-weight: bold;
+  margin-bottom: 20px;
+  color: #ff1493; /* Deep Pink */
+  text-shadow: 2px 2px #000;
+}
+
+.game-show-question {
+  font-size: 2em;
+  margin: 20px 0;
+}
+
+.game-show-choices {
+  list-style: none;
+  padding: 0;
+  display: inline-block;
+  text-align: left;
+}
+
+.game-show-choices li {
+  background-color: #4b0082; /* Indigo background */
+  margin: 10px;
+  padding: 15px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #fff;
+  font-size: 1.2em;
+}
+
+.game-show-choices li:hover {
+  background-color: #9400d3; /* Dark Violet */
+}
+
+.game-show-winner {
+  font-size: 2.5em;
+  color: #ff4500; /* Orange Red */
+  margin-top: 30px;
+}
+
+.game-show-button {
+  background-color: #ff8c00; /* Dark Orange */
+  color: #fff;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 5px;
+  font-size: 1em;
+  margin: 5px;
+  cursor: pointer;
+}
+
+.game-show-button:hover {
+  background-color: #ffa500; /* Orange */
+}
+
+input[type="text"],
+input[type="number"] {
+  padding: 10px;
+  border: 2px solid #ff1493;
+  border-radius: 5px;
+  margin: 5px;
+  font-size: 1em;
+}
+
+label {
+  font-size: 1.2em;
+}
