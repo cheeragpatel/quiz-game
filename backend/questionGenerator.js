@@ -1,15 +1,25 @@
-const axios = require('axios');
+import OpenAI from "openai";
 
-const GPT4O_API_URL = 'https://api.gpt-4o.com/generate';
+const token = process.env["GITHUB_TOKEN"];
+const endpoint = "https://models.inference.ai.azure.com";
+const modelName = "gpt-4o";
+
+const client = new OpenAI({ baseURL: endpoint, apiKey: token });
 
 async function generateQuestion(topic) {
   try {
-    const response = await axios.post(GPT4O_API_URL, {
-      prompt: `Generate a multiple choice question about ${topic}.`,
+    const response = await client.chat.completions.create({
+      messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: `Generate a multiple choice question about ${topic}.` }
+      ],
+      temperature: 1.0,
+      top_p: 1.0,
       max_tokens: 100,
+      model: modelName
     });
 
-    const questionData = response.data;
+    const questionData = response.choices[0].message.content;
     return {
       question: questionData.question,
       choices: questionData.choices,

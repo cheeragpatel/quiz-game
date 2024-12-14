@@ -26,19 +26,23 @@ main().catch((err) => {
   console.error("The sample encountered an error:", err);
 });
 
-const axios = require('axios');
-
-const GPT4O_API_URL = 'https://api.gpt-4o.com/generate';
+const client = new OpenAI({ baseURL: endpoint, apiKey: token });
 
 async function generateHostQuip(question, winner) {
   try {
-    const response = await axios.post(GPT4O_API_URL, {
-      prompt: `As a 70s game show host, make a quip about the question "${question}" and the winner "${winner}".`,
+    const response = await client.chat.completions.create({
+      messages: [
+        { role: "system", content: "You are a 70s game show host." },
+        { role: "user", content: `Make a quip about the question "${question}" and the winner "${winner}".` }
+      ],
+      temperature: 1.0,
+      top_p: 1.0,
       max_tokens: 50,
+      model: modelName
     });
 
-    const quipData = response.data;
-    return quipData.quip;
+    const quipData = response.choices[0].message.content;
+    return quipData;
   } catch (error) {
     console.error('Error generating host quip:', error);
     throw new Error('Failed to generate host quip');
