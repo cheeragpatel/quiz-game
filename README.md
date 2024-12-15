@@ -2,15 +2,39 @@
 
 ## Overview
 
-This is a quiz game webapp that dynamically generates questions using GPT-4o. Players can register using their GitHub handles and avatars. The game show view displays the current questions, a progress bar for responses, and shows the winner with a game show host styled quip. The game master view has controls to start/end the game, move to the next question, and configure the number of questions. The virtual host is powered by GPT-4o and dynamically hosts the game in the style of a 70s game show host.
+This is a multiplayer quiz game webapp that dynamically generates questions using GPT-4. Players register using their GitHub handles and avatars. The game features a retro 70's game show aesthetic with a virtual host (Mona Woolery) powered by GPT-4.
 
 ## Features
 
-- Dynamic question generation using GPT-4o
+- Dynamic question generation using GPT-4
 - Player registration with GitHub handles and avatars
-- Game show view with current questions, progress bar, and winner display
-- Game master view with controls to manage the game flow
-- Virtual host powered by GPT-4o
+- Real-time multiplayer support using Socket.IO
+- Retro 70's game show themed interface
+- Virtual host (Mona Woolery) with witty commentary
+- Score tracking and leaderboard
+- Configurable number of questions and topics
+
+## Views
+
+### Player View ([frontend/src/PlayerView.js](frontend/src/PlayerView.js))
+- Player registration with GitHub integration
+- Real-time question display
+- Answer submission
+- Score tracking
+- Round winner announcements
+
+### Game Show View ([frontend/src/GameShowView.js](frontend/src/GameShowView.js))
+- Current question display
+- Player avatars
+- Host quips and commentary
+- Winner announcements
+- Final leaderboard
+
+### Game Master View ([frontend/src/GameMasterView.js](frontend/src/GameMasterView.js))
+- Game configuration (number of questions, topics)
+- Game flow controls (start/end game, next question)
+- Player list and score tracking
+- Round monitoring
 
 ## Installation
 
@@ -56,13 +80,13 @@ This is a quiz game webapp that dynamically generates questions using GPT-4o. Pl
 
 ### Backend
 
-- `backend/questionGenerator.js`: Interacts with GPT-4o for question generation and fetches questions based on nerdy/geeky pop culture references.
-- `backend/virtualHost.js`: Implements a virtual host function using GPT-4o for dynamic hosting.
+- `backend/questionGenerator.js`: Interacts with GPT-4 for question generation and fetches questions based on nerdy/geeky pop culture references.
+- `backend/virtualHost.js`: Implements a virtual host function using GPT-4 for dynamic hosting.
 
 ### Frontend
 
 - `frontend/registrationForm.js`: Implements a registration form that accepts GitHub handles and fetches/displays GitHub avatars as profile pictures.
-- `frontend/gameShowView.js`: Implements a game show view with dynamic question display, progress bar, and winner display with a quip using GPT-4o.
+- `frontend/gameShowView.js`: Implements a game show view with dynamic question display, progress bar, and winner display with a quip using GPT-4.
 - `frontend/gameMasterView.js`: Adds controls for the game master to start/end the game, move to the next question, and set the number of questions.
 
 ## Running in a GitHub Codespace
