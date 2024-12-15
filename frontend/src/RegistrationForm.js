@@ -10,6 +10,7 @@ const RegistrationForm = () => {
     e.preventDefault();
     try {
       await axios.post('/api/register', { githubHandle });
+      sessionStorage.setItem('playerName', githubHandle);
       navigate('/player');
     } catch (error) {
       console.error('Error registering:', error);

@@ -11,30 +11,38 @@ const configuration = new Configuration({
 
 const openai = new OpenAIApi(configuration);
 
-async function generateHostQuip(question, winner) {
+async function generateHostQuip(prompt) {
   try {
     const response = await openai.createChatCompletion({
       model: modelName,
       messages: [
-        { role: "system", content: "You are a 70s game show host named Mona Woolery, in the style of Chuck Woolery." },
-        { role: "user", content: `Make a quip about the question "${question}" and the winner "${winner}".` }
+        {
+          role: "system",
+          content: "You are a 70's game show host named Mona Woolery in the style of Bob Barker and Chuck Woolery. Keep responses concise and under 200 characters."
+        },
+        { role: "user", content: prompt }
       ],
       max_tokens: 50,
       temperature: 1.0,
       top_p: 1.0,
     });
 
-    const quip = response.data.choices[0].message.content;
-    return quip.trim();
+    let quip = response.data.choices[0].message?.content;
+    quip = quip ? quip.trim() : "Right on!";
+    return quip;
   } catch (error) {
     console.error('Error generating host quip:', error);
-    throw new Error('Failed to generate host quip');
+    return 'Groovy!';
   }
 }
 
 async function hostGame(question, winner) {
   try {
-    const quip = await generateHostQuip(question, winner);
+    const prompt = Array.isArray(winner) && winner.length > 1
+      ? `Make a witty quip about a tie between ${winner.join(' and ')} on the question "${question}".`
+      : `Make a quip about the question "${question}" and the winner "${winner ? winner[0] : 'nobody'}".`;
+
+    const quip = await generateHostQuip(prompt);
     console.log(`Host: ${quip}`);
   } catch (error) {
     console.error('Error hosting game:', error);
