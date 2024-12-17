@@ -30,22 +30,22 @@ const PlayerView = () => {
     }
 
     // Listen for the 'gameStarted' event
-    socket.on('gameStarted', (data) => {
+    const handleGameStarted = (data) => {
       setCurrentQuestion(data.currentQuestion);
       setHasAnswered(false);
       setSelectedAnswer('');
       setScore(0); // Reset score if necessary
-    });
-
+    };
+    socket.on('gameStarted', handleGameStarted);
     // Listen for 'newQuestion' event
-    socket.on('newQuestion', (question) => {
+    const handleNewQuestion = (question) => {
       setCurrentQuestion(question);
       setHasAnswered(false);
       setSelectedAnswer('');
-    });
-
+    };
+    socket.on('newQuestion', handleNewQuestion);
     // Listen for 'scoreUpdate' event
-    socket.on('scoreUpdate', (data) => {
+    const handleScoreUpdate = (data) => {
       console.log("Score update received:", data);
       if (data.playerName === playerName) {
         setScore(data.score);
@@ -55,16 +55,16 @@ const PlayerView = () => {
           alert('Wrong answer.');
         }
       }
+    };
+    socket.on('scoreUpdate', handleScoreUpdate);
+      }
     });
 
     // Listen for 'roundComplete' event (optional)
     socket.on('roundComplete', (data) => {
       // Handle round completion if needed
-      console.log("Round complete:", data);
-    });
-
     // Listen for 'gameOver' event
-    socket.on('gameOver', (data) => {
+    const handleGameOver = (data) => {
       setGameOver(true);
       const playerRank = Object.entries(data.finalScores)
         .sort(([, a], [, b]) => b - a)
@@ -81,9 +81,32 @@ const PlayerView = () => {
       
       setHostQuip(personalQuip);
       setFinalScores(data.finalScores);
-    });
+    };
 
-    return () => socket.disconnect();
+    socket.on('gameOver', handleGameOver);
+
+    return () => {
+      socket.off('gameOver', handleGameOver);
+      socket.off('scoreUpdate', handleScoreUpdate);
+      socket.off('newQuestion', handleNewQuestion);
+      socket.off('gameStarted', handleGameStarted);
+      socket.disconnect();
+    };
+      socket.off('gameOver', handleGameOver);
+      socket.disconnect();
+    };
+    return () => {
+      socket.off('scoreUpdate', handleScoreUpdate);
+      socket.disconnect();
+    };
+    return () => {
+      socket.off('newQuestion', handleNewQuestion);
+      socket.disconnect();
+    };
+    return () => {
+      socket.off('gameStarted', handleGameStarted);
+      socket.disconnect();
+    };
   }, [playerName]); // Add playerName as a dependency
 
   // Handle answer submission
