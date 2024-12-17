@@ -87,6 +87,12 @@ const PlayerView = () => {
 
     return () => {
       socket.off('gameOver', handleGameOver);
+      socket.off('scoreUpdate', handleScoreUpdate);
+      socket.off('newQuestion', handleNewQuestion);
+      socket.off('gameStarted', handleGameStarted);
+      socket.disconnect();
+    };
+      socket.off('gameOver', handleGameOver);
       socket.disconnect();
     };
     return () => {
