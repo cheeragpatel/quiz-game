@@ -50,7 +50,7 @@ app.post('/api/startGame', async (req, res) => {
     currentQuestion = questionsList[currentQuestionIndex];
 
     const introQuip = await generateIntroductionQuip();
-    const welcomeQuip = await generateHostQuip('welcome', 'everyone');
+    const welcomeQuip = await generateIntroductionQuip();
 
     // Emit 'gameStarted' event with the current question
     io.emit('gameStarted', { 
@@ -160,14 +160,14 @@ app.post('/api/register', (req, res) => {
 app.post('/api/submitAnswer', (req, res) => {
   const { playerName, answer } = req.body;
   
-  // Emit when player answers
-  io.emit('playerAnswered', { playerName });
-
   const player = playerName;
 
   if (!gameStarted) {
     return res.status(400).send({ error: 'Game has not started yet' });
   }
+
+  // Emit when player answers
+  io.emit('playerAnswered', { playerName });
   
   // Only count first answer from each player for this round
   if (!playerAnswers[player]) {

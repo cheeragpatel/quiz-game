@@ -12,6 +12,19 @@ const configuration = new Configuration({
 const openai = new OpenAIApi(configuration);
 
 async function generateQuestions(topic, numQuestions) {
+  const maxQuestionsPerRequest = 10;
+  let allQuestions = [];
+
+  for (let i = 0; i < Math.ceil(numQuestions / maxQuestionsPerRequest); i++) {
+    const questionsToGenerate = Math.min(maxQuestionsPerRequest, numQuestions - i * maxQuestionsPerRequest);
+    const questions = await generateQuestionsBatch(topic, questionsToGenerate);
+    allQuestions = allQuestions.concat(questions);
+  }
+
+  return allQuestions;
+}
+
+async function generateQuestionsBatch(topic, numQuestions) {
   try {
     const response = await openai.createChatCompletion({
       model: modelName,
@@ -25,10 +38,10 @@ async function generateQuestions(topic, numQuestions) {
           content: `Generate ${numQuestions} unique multiple-choice questions about ${topic}. Respond ONLY with a JSON array in this format: [{"question": "text", "choices": ["a", "b", "c", "d"], "correctAnswer": "correct choice"}, ...]`
         }
       ],
-      max_tokens: numQuestions * 150, // Adjusted for multiple questions
+      max_tokens: Math.min(numQuestions * 150, 2048), // Adjusted for multiple questions with an upper limit
       temperature: 0.7,
       top_p: 1.0,
-    });
+    const validQuestions = questions.filter(q => q.question && Array.isArray(q.choices) && q.correctAnswer && q.choices.includes(q.correctAnswer));
 
     let questionsData = response.data.choices[0].message.content;
 
@@ -51,4 +64,4 @@ async function generateQuestions(topic, numQuestions) {
   }
 }
 
-module.exports = { generateQuestions };
+module.exports = { generateQuestions, generateQuestionsBatch };
