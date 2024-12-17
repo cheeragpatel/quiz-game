@@ -14,21 +14,30 @@ function App() {
   useEffect(() => {
     const socket = io();
 
-    socket.on('gameStarted', (data) => {
+    const handleGameStarted = (data) => {
       setGameStatus('started');
       setCurrentQuestion(data.currentQuestion);
-    });
+    };
 
-    socket.on('newQuestion', (question) => {
+    const handleNewQuestion = (question) => {
       setCurrentQuestion(question);
-    });
+    };
 
-    socket.on('gameOver', (data) => {
+    const handleGameOver = (data) => {
       setGameStatus('ended');
       // Handle game over state
-    });
+    };
 
-    return () => socket.close();
+    socket.on('gameStarted', handleGameStarted);
+    socket.on('newQuestion', handleNewQuestion);
+    socket.on('gameOver', handleGameOver);
+
+    return () => {
+      socket.off('gameStarted', handleGameStarted);
+      socket.off('newQuestion', handleNewQuestion);
+      socket.off('gameOver', handleGameOver);
+      socket.close();
+    };
   }, []);
 
   useEffect(() => {

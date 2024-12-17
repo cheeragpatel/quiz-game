@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
+import PlayerStatus from './components/PlayerStatus';
+import ResponseStatus from './components/ResponseStatus';
 
 const GameShowView = () => {
   const [winners, setWinners] = useState([]);
@@ -279,6 +281,8 @@ const GameShowView = () => {
           </div>
         )
       )}
+      <PlayerStatus players={registeredPlayers} responseStatus={{}} />
+      <ResponseStatus players={registeredPlayers} responseStatus={{}} />
     </div>
   );
 };

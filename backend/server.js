@@ -14,16 +14,34 @@ const port = process.env.PORT || 3001;
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
-// Global variables
-let gameStarted = false;
-let gameTopics = [];
-let currentQuestionIndex = 0;
-let questionsList = [];
-let currentQuestion = null; // Global declaration
-let playerAnswers = {};
-let registeredPlayers = [];
-let playerScores = {};
-let totalQuestions = 10;
+// Encapsulated game state
+class GameState {
+  constructor() {
+    this.gameStarted = false;
+    this.gameTopics = [];
+    this.currentQuestionIndex = 0;
+    this.questionsList = [];
+    this.currentQuestion = null;
+    this.playerAnswers = {};
+    this.registeredPlayers = [];
+    this.playerScores = {};
+    this.totalQuestions = 10;
+  }
+
+  reset() {
+    this.gameStarted = false;
+    this.gameTopics = [];
+    this.currentQuestionIndex = 0;
+    this.questionsList = [];
+    this.currentQuestion = null;
+    this.playerAnswers = {};
+    this.registeredPlayers = [];
+    this.playerScores = {};
+    this.totalQuestions = 10;
+  }
+}
+
+const gameState = new GameState();
 
 app.use(express.json());
 
@@ -32,36 +50,36 @@ app.use(express.static(path.join(__dirname, '../frontend/build')));
 
 app.post('/api/startGame', async (req, res) => {
   const { numQuestions, topics } = req.body;
-  gameStarted = true;
-  gameTopics = topics;
-  totalQuestions = numQuestions;
-  currentQuestionIndex = 0;
-  playerScores = {}; // Reset scores
-  playerAnswers = {};
+  gameState.gameStarted = true;
+  gameState.gameTopics = topics;
+  gameState.totalQuestions = numQuestions;
+  gameState.currentQuestionIndex = 0;
+  gameState.playerScores = {}; // Reset scores
+  gameState.playerAnswers = {};
 
   try {
     // Generate all questions upfront
-    questionsList = await generateQuestions(gameTopics[0], totalQuestions);
-    if (!questionsList || questionsList.length === 0) {
+    gameState.questionsList = await generateQuestions(gameState.gameTopics[0], gameState.totalQuestions);
+    if (!gameState.questionsList || gameState.questionsList.length === 0) {
       throw new Error('No questions generated');
     }
 
     // Set the current question
-    currentQuestion = questionsList[currentQuestionIndex];
+    gameState.currentQuestion = gameState.questionsList[gameState.currentQuestionIndex];
 
     const introQuip = await generateIntroductionQuip();
     const welcomeQuip = await generateIntroductionQuip();
 
     // Emit 'gameStarted' event with the current question
     io.emit('gameStarted', { 
-      currentQuestion,
+      currentQuestion: gameState.currentQuestion,
       introQuip,
       welcomeQuip
     });
 
     res.send({ 
       message: 'Game started',
-      currentQuestion,
+      currentQuestion: gameState.currentQuestion,
       introQuip,
       welcomeQuip
     });
@@ -72,7 +90,7 @@ app.post('/api/startGame', async (req, res) => {
 });
 
 app.post('/api/endGame', (req, res) => {
-  gameStarted = false;
+  gameState.gameStarted = false;
   const finalWinner = getWinner();
   
   generateHostQuip('game over', finalWinner)
@@ -80,25 +98,23 @@ app.post('/api/endGame', (req, res) => {
       io.emit('gameOver', { 
         winner: finalWinner,
         quip: quip,
-        finalScores: playerScores
+        finalScores: gameState.playerScores
       });
     });
 
-  gameTopics = [];
-  currentQuestion = null;
-  playerAnswers = {};
+  gameState.reset();
   res.send({ message: 'Game ended', winner: finalWinner });
 });
 
 app.post('/api/nextQuestion', async (req, res) => {
-  if (!gameStarted) {
+  if (!gameState.gameStarted) {
     return res.status(400).send({ error: 'Game has not started yet' });
   }
 
   // Increase the question index
-  currentQuestionIndex++;
+  gameState.currentQuestionIndex++;
 
-  if (currentQuestionIndex >= totalQuestions) {
+  if (gameState.currentQuestionIndex >= gameState.totalQuestions) {
     // Game over
     const finalWinners = getWinners();
     const gameOverQuip = await generateHostQuip('game over', finalWinners);
@@ -107,28 +123,28 @@ app.post('/api/nextQuestion', async (req, res) => {
     io.emit('gameOver', {
       winners: finalWinners,
       quip: gameOverQuip,
-      finalScores: playerScores
+      finalScores: gameState.playerScores
     });
 
-    gameStarted = false; // Reset game state
+    gameState.gameStarted = false; // Reset game state
     res.json({ gameOver: true });
   } else {
     // Continue to next question
-    currentQuestion = questionsList[currentQuestionIndex];
-    playerAnswers = {};
+    gameState.currentQuestion = gameState.questionsList[gameState.currentQuestionIndex];
+    gameState.playerAnswers = {};
 
     // Emit 'newQuestion' event for the next question
-    io.emit('newQuestion', currentQuestion);
+    io.emit('newQuestion', gameState.currentQuestion);
 
-    res.json(currentQuestion);
+    res.json(gameState.currentQuestion);
   }
 });
 
 app.get('/api/currentQuestion', (req, res) => {
-  if (!gameStarted || !currentQuestion) {
+  if (!gameState.gameStarted || !gameState.currentQuestion) {
     return res.status(400).send({ error: 'No current question available' });
   }
-  res.send(currentQuestion);
+  res.send(gameState.currentQuestion);
 });
 
 app.get('/api/progress', (req, res) => {
@@ -136,7 +152,7 @@ app.get('/api/progress', (req, res) => {
 });
 
 app.get('/api/winnerAndQuip', async (req, res) => {
-  if (!gameStarted) {
+  if (!gameState.gameStarted) {
     return res.status(400).send({ error: 'Game has not started yet' });
   }
   const winner = await hostGame();
@@ -144,16 +160,16 @@ app.get('/api/winnerAndQuip', async (req, res) => {
 });
 
 app.get('/api/players', (req, res) => {
-  res.json(registeredPlayers);
+  res.json(gameState.registeredPlayers);
 });
 
 app.post('/api/register', (req, res) => {
   const { githubHandle } = req.body;
-  registeredPlayers.push({ 
+  gameState.registeredPlayers.push({ 
     githubHandle,
     joinedAt: new Date()
   });
-  io.emit('playerRegistered', registeredPlayers);
+  io.emit('playerRegistered', gameState.registeredPlayers);
   res.json({ success: true });
 });
 
@@ -162,7 +178,7 @@ app.post('/api/submitAnswer', (req, res) => {
   
   const player = playerName;
 
-  if (!gameStarted) {
+  if (!gameState.gameStarted) {
     return res.status(400).send({ error: 'Game has not started yet' });
   }
 
@@ -170,41 +186,41 @@ app.post('/api/submitAnswer', (req, res) => {
   io.emit('playerAnswered', { playerName });
   
   // Only count first answer from each player for this round
-  if (!playerAnswers[player]) {
-    playerAnswers[player] = answer;
+  if (!gameState.playerAnswers[player]) {
+    gameState.playerAnswers[player] = answer;
     
     // Check if answer is correct and update score
-    if (answer === currentQuestion.correctAnswer) {
-      playerScores[player] = (playerScores[player] || 0) + 1;
+    if (answer === gameState.currentQuestion.correctAnswer) {
+      gameState.playerScores[player] = (gameState.playerScores[player] || 0) + 1;
     }
   }
   
   // Check if all players have answered
-  if (Object.keys(playerAnswers).length === registeredPlayers.length) {
+  if (Object.keys(gameState.playerAnswers).length === gameState.registeredPlayers.length) {
     // Check if anyone got it right
-    const correctAnswers = Object.entries(playerAnswers)
-      .filter(([_, ans]) => ans === currentQuestion.correctAnswer);
+    const correctAnswers = Object.entries(gameState.playerAnswers)
+      .filter(([_, ans]) => ans === gameState.currentQuestion.correctAnswer);
     
     if (correctAnswers.length === 0) {
       // No one got it right
-      generateHostQuip('no winners', currentQuestion.correctAnswer)
+      generateHostQuip('no winners', gameState.currentQuestion.correctAnswer)
         .then(quip => {
           io.emit('roundComplete', { 
             winners: [],
             quip,
-            scores: playerScores,
-            correctAnswer: currentQuestion.correctAnswer
+            scores: gameState.playerScores,
+            correctAnswer: gameState.currentQuestion.correctAnswer
           });
         });
     } else {
       // Some players got it right
       const winners = getWinners();
-      generateHostQuip(currentQuestion.question, winners)
+      generateHostQuip(gameState.currentQuestion.question, winners)
         .then(quip => {
           io.emit('roundComplete', { 
             winners,
             quip,
-            scores: playerScores
+            scores: gameState.playerScores
           });
         });
     }
@@ -254,9 +270,9 @@ app.get('/api/introductionQuip', async (req, res) => {
 
 // Helper function to get the winners
 function getWinners() {
-  const highestScore = Math.max(...Object.values(playerScores));
-  const winners = Object.keys(playerScores).filter(
-    (player) => playerScores[player] === highestScore
+  const highestScore = Math.max(...Object.values(gameState.playerScores));
+  const winners = Object.keys(gameState.playerScores).filter(
+    (player) => gameState.playerScores[player] === highestScore
   );
   return winners;
 }

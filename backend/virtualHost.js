@@ -11,51 +11,45 @@ const configuration = new Configuration({
 
 const openai = new OpenAIApi(configuration);
 
+/**
+ * Helper function to generate a prompt for the OpenAI API.
+ * @param {string} context - The context for the prompt.
+ * @param {string} winners - The winners or correct answer.
+ * @returns {string} - The generated prompt.
+ */
+function generatePrompt(context, winners) {
+  if (context === 'no winners') {
+    const prompts = [
+      `Ouch! Not a single correct answer! The answer was "${winners}". Here's a witty 70's game show host comment about everyone getting it wrong...`,
+      `Nobody got this one! The correct answer was "${winners}". Give me a funny, encouraging 70's game show host response...`,
+      `Strike out! The answer was "${winners}". Share a humorous 70's style game show host quip about the collective miss...`
+    ];
+    return prompts[Math.floor(Math.random() * prompts.length)];
+  } else {
+    return context;
+  }
+}
+
 async function generateHostQuip(context, winners) {
   try {
-    if (context === 'no winners') {
-      const prompts = [
-        `Ouch! Not a single correct answer! The answer was "${winners}". Here's a witty 70's game show host comment about everyone getting it wrong...`,
-        `Nobody got this one! The correct answer was "${winners}". Give me a funny, encouraging 70's game show host response...`,
-        `Strike out! The answer was "${winners}". Share a humorous 70's style game show host quip about the collective miss...`
-      ];
-      const prompt = prompts[Math.floor(Math.random() * prompts.length)];
-      const response = await openai.createChatCompletion({
-        model: modelName,
-        messages: [
-          {
-            role: "system",
-            content: "You are a 70's game show host named Mona Woolery in the style of Bob Barker and Chuck Woolery. Keep responses concise and under 200 characters."
-          },
-          { role: "user", content: prompt }
-        ],
-        max_tokens: 50,
-        temperature: 1.0,
-        top_p: 1.0,
-      });
+    const prompt = generatePrompt(context, winners);
+    const response = await openai.createChatCompletion({
+      model: modelName,
+      messages: [
+        {
+          role: "system",
+          content: "You are a 70's game show host named Mona Woolery in the style of Bob Barker and Chuck Woolery. Keep responses concise and under 200 characters."
+        },
+        { role: "user", content: prompt }
+      ],
+      max_tokens: 50,
+      temperature: 1.0,
+      top_p: 1.0,
+    });
 
-      let quip = response.data.choices[0].message?.content;
-      quip = quip ? quip.trim() : "Right on!";
-      return quip;
-    } else {
-      const response = await openai.createChatCompletion({
-        model: modelName,
-        messages: [
-          {
-            role: "system",
-            content: "You are a 70's game show host named Mona Woolery in the style of Bob Barker and Chuck Woolery. Keep responses concise and under 200 characters."
-          },
-          { role: "user", content: context }
-        ],
-        max_tokens: 50,
-        temperature: 1.0,
-        top_p: 1.0,
-      });
-
-      let quip = response.data.choices[0].message?.content;
-      quip = quip ? quip.trim() : "Right on!";
-      return quip;
-    }
+    let quip = response.data.choices[0].message?.content;
+    quip = quip ? quip.trim() : "Right on!";
+    return quip;
   } catch (error) {
     console.error('Error generating host quip:', error);
     return 'Groovy!';
