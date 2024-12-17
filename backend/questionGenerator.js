@@ -11,55 +11,44 @@ const configuration = new Configuration({
 
 const openai = new OpenAIApi(configuration);
 
-async function generateQuestion(topic) {
+async function generateQuestions(topic, numQuestions) {
   try {
     const response = await openai.createChatCompletion({
       model: modelName,
       messages: [
-        { 
-          role: "system", 
-          content: "You are a quiz question generator. Always respond with valid JSON containing question, choices (array), and correctAnswer properties."
+        {
+          role: "system",
+          content: "You are a quiz question generator. Always respond with a valid JSON array of questions, each containing question, choices (array), and correctAnswer properties."
         },
-        { 
-          role: "user", 
-          content: `Generate a multiple choice question about ${topic}. Respond ONLY with JSON in this format: {"question": "text", "choices": ["a", "b", "c", "d"], "correctAnswer": "correct choice"}` 
+        {
+          role: "user",
+          content: `Generate ${numQuestions} unique multiple-choice questions about ${topic}. Respond ONLY with a JSON array in this format: [{"question": "text", "choices": ["a", "b", "c", "d"], "correctAnswer": "correct choice"}, ...]`
         }
       ],
-      max_tokens: 150,
+      max_tokens: numQuestions * 150, // Adjusted for multiple questions
       temperature: 0.7,
       top_p: 1.0,
     });
 
-    let questionData = response.data.choices[0].message.content;
-    
-    // Remove any non-JSON content
-    questionData = questionData.substring(
-      questionData.indexOf('{'),
-      questionData.lastIndexOf('}') + 1
+    let questionsData = response.data.choices[0].message.content;
+
+    // Extract JSON array from response
+    questionsData = questionsData.substring(
+      questionsData.indexOf('['),
+      questionsData.lastIndexOf(']') + 1
     );
 
-    try {
-      const data = JSON.parse(questionData);
-      if (!data.question || !Array.isArray(data.choices) || !data.correctAnswer) {
-        throw new Error('Invalid question format');
-      }
-      return {
-        question: data.question,
-        choices: data.choices,
-        correctAnswer: data.correctAnswer,
-      };
-    } catch (parseError) {
-      console.error('Failed to parse question JSON:', parseError);
-      return {
-        question: 'What is the capital of France?',
-        choices: ['Paris', 'London', 'Berlin', 'Madrid'],
-        correctAnswer: 'Paris'
-      };
-    }
+    const questions = JSON.parse(questionsData);
+
+    // Validate questions
+    const validQuestions = questions.filter(q => q.question && Array.isArray(q.choices) && q.correctAnswer);
+
+    return validQuestions;
+
   } catch (error) {
-    console.error('Error generating question:', error);
-    throw new Error('Failed to generate question');
+    console.error('Error generating questions:', error);
+    throw new Error('Failed to generate questions');
   }
 }
 
-module.exports = { generateQuestion };
+module.exports = { generateQuestions };

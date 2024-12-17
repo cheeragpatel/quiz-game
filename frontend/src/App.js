@@ -10,22 +10,25 @@ import PlayerView from './PlayerView';
 function App() {
   const [currentQuestion, setCurrentQuestion] = useState(null);
   const [gameStatus, setGameStatus] = useState('not started');
-  const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    const newSocket = io();
-    setSocket(newSocket);
+    const socket = io();
 
-    newSocket.on('gameStarted', (data) => {
+    socket.on('gameStarted', (data) => {
       setGameStatus('started');
       setCurrentQuestion(data.currentQuestion);
     });
 
-    newSocket.on('newQuestion', (question) => {
+    socket.on('newQuestion', (question) => {
       setCurrentQuestion(question);
     });
 
-    return () => newSocket.close();
+    socket.on('gameOver', (data) => {
+      setGameStatus('ended');
+      // Handle game over state
+    });
+
+    return () => socket.close();
   }, []);
 
   useEffect(() => {
@@ -43,14 +46,6 @@ function App() {
     }
   }, [gameStatus]);
 
-  useEffect(() => {
-    const socket = io();
-    socket.on('newQuestion', (question) => {
-      setCurrentQuestion(question);
-    });
-    return () => socket.close();
-  }, []);
-
   return (
     <Router>
       <Routes>
@@ -67,9 +62,7 @@ function App() {
         <Route 
           path="/game-show" 
           element={
-            <GameShowView 
-              currentQuestion={currentQuestion} 
-            />
+            <GameShowView />
           } 
         />
         <Route 

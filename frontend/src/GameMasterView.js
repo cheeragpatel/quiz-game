@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
 
-const GameMasterView = ({ setCurrentQuestion, setGameStatus }) => {
+const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   const [numQuestions, setNumQuestions] = useState(10);
   const [topics, setTopics] = useState('');
   const [players, setPlayers] = useState([]);
@@ -11,6 +11,8 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus }) => {
   const [hostQuip, setHostQuip] = useState('');
   const [gameOver, setGameOver] = useState(false);
   const [finalScores, setFinalScores] = useState({});
+  const [playerResponses, setPlayerResponses] = useState({});
+  const [responseStatus, setResponseStatus] = useState({});
 
   // Fetch players when component mounts
   useEffect(() => {
@@ -58,6 +60,58 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus }) => {
     return () => socket.close();
   }, [setGameStatus]);
 
+  // Add socket listener for game started
+  useEffect(() => {
+    const socket = io();
+
+    socket.on('gameStarted', (data) => {
+      console.log('Game started event received:', data);
+      setGameStatus('started');
+      setCurrentQuestion(data.currentQuestion);
+    });
+
+    return () => socket.disconnect();
+  }, []);
+
+  // Add socket listener for responses
+  useEffect(() => {
+    const socket = io();
+    
+    socket.on('playerAnswered', ({ playerName }) => {
+      setPlayerResponses(prev => ({
+        ...prev,
+        [playerName]: true
+      }));
+    });
+
+    socket.on('newQuestion', () => {
+      setPlayerResponses({}); // Reset responses
+    });
+
+    return () => socket.disconnect();
+  }, []);
+
+  // Add socket listener specifically for player answers
+  useEffect(() => {
+    const socket = io();
+
+    socket.on('playerAnswered', (data) => {
+      console.log('Player answered:', data); // Debug log
+      setResponseStatus(prev => ({
+        ...prev,
+        [data.playerName]: true
+      }));
+    });
+
+    // Reset responses when new question starts
+    socket.on('newQuestion', () => {
+      console.log('New question - resetting responses'); // Debug log
+      setResponseStatus({});
+    });
+
+    return () => socket.disconnect();
+  }, []);
+
   const handleNumQuestionsChange = (e) => {
     setNumQuestions(e.target.value);
   };
@@ -98,6 +152,52 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus }) => {
       console.error('Error fetching next question:', error);
     }
   };
+
+  const ResponseStatus = () => (
+    <div className="response-status">
+      <h3>Player Responses</h3>
+      <div className="response-grid">
+        {players.map(player => (
+          <div 
+            key={player.githubHandle}
+            className={`response-indicator ${playerResponses[player.githubHandle] ? 'answered' : 'waiting'}`}
+          >
+            <span className="player-name">{player.githubHandle}</span>
+            <span className="response-icon">
+              {playerResponses[player.githubHandle] ? '✓' : '⌛'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderPlayerStatus = () => (
+    <div className="game-show-container">
+      <h3>Player Responses</h3>
+      <div className="game-show-choices">
+        {players.map((player) => (
+          <li 
+            key={player.githubHandle}
+            className={responseStatus[player.githubHandle] ? 'answered' : 'waiting'}
+          >
+            {player.githubHandle}: {responseStatus[player.githubHandle] ? '✓ Answered' : '⌛ Waiting'}
+          </li>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (gameStatus === 'started') {
+    return (
+      <div>
+        <h2>Game in Progress</h2>
+        {/* Display current question or other game details */}
+        <ResponseStatus />
+        {renderPlayerStatus()}
+      </div>
+    );
+  }
 
   return (
     <div>

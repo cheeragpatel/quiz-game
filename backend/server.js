@@ -2,22 +2,28 @@ const express = require('express');
 const path = require('path');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
-const { generateQuestion, fetchQuestions } = require('./questionGenerator');
-const { generateHostQuip, hostGame } = require('./virtualHost');
+const { generateQuestions } = require('./questionGenerator');
+const { 
+  generateHostQuip, 
+  generateGoodbyeQuip, 
+  generateIntroductionQuip 
+} = require('./virtualHost');
 
 const app = express();
 const port = process.env.PORT || 3001;
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
+// Global variables
 let gameStarted = false;
 let gameTopics = [];
-let currentQuestion = null;
+let currentQuestionIndex = 0;
+let questionsList = [];
+let currentQuestion = null; // Global declaration
 let playerAnswers = {};
 let registeredPlayers = [];
 let playerScores = {};
-let currentQuestionNumber = 0;
-let totalQuestions = 10; // Default value
+let totalQuestions = 10;
 
 app.use(express.json());
 
@@ -29,14 +35,39 @@ app.post('/api/startGame', async (req, res) => {
   gameStarted = true;
   gameTopics = topics;
   totalQuestions = numQuestions;
-  currentQuestionNumber = 0;
-  playerScores = {}; // Reset scores when game starts
+  currentQuestionIndex = 0;
+  playerScores = {}; // Reset scores
+  playerAnswers = {};
+
   try {
-    currentQuestion = await generateQuestion(gameTopics[0]);
-    io.emit('gameStarted', { currentQuestion }); // Broadcast to all clients
-    res.send({ message: 'Game started', numQuestions, topics, currentQuestion });
+    // Generate all questions upfront
+    questionsList = await generateQuestions(gameTopics[0], totalQuestions);
+    if (!questionsList || questionsList.length === 0) {
+      throw new Error('No questions generated');
+    }
+
+    // Set the current question
+    currentQuestion = questionsList[currentQuestionIndex];
+
+    const introQuip = await generateIntroductionQuip();
+    const welcomeQuip = await generateHostQuip('welcome', 'everyone');
+
+    // Emit 'gameStarted' event with the current question
+    io.emit('gameStarted', { 
+      currentQuestion,
+      introQuip,
+      welcomeQuip
+    });
+
+    res.send({ 
+      message: 'Game started',
+      currentQuestion,
+      introQuip,
+      welcomeQuip
+    });
   } catch (error) {
-    res.status(500).send({ error: 'Failed to generate the first question' });
+    console.error('Failed to start game:', error);
+    res.status(500).send({ error: 'Failed to start game' });
   }
 });
 
@@ -64,48 +95,40 @@ app.post('/api/nextQuestion', async (req, res) => {
     return res.status(400).send({ error: 'Game has not started yet' });
   }
 
-  currentQuestionNumber++;
+  // Increase the question index
+  currentQuestionIndex++;
 
-  if (currentQuestionNumber >= totalQuestions) {
+  if (currentQuestionIndex >= totalQuestions) {
+    // Game over
     const finalWinners = getWinners();
     const gameOverQuip = await generateHostQuip('game over', finalWinners);
-    
+
+    // Emit 'gameOver' event with winners and final scores
     io.emit('gameOver', {
-      winner: finalWinners,
+      winners: finalWinners,
       quip: gameOverQuip,
       finalScores: playerScores
     });
 
-    gameStarted = false;
-    return res.json({ gameOver: true });
-  }
-
-  try {
-    // Reset player answers for the new round
+    gameStarted = false; // Reset game state
+    res.json({ gameOver: true });
+  } else {
+    // Continue to next question
+    currentQuestion = questionsList[currentQuestionIndex];
     playerAnswers = {};
-    
-    // Generate new question
-    currentQuestion = await generateQuestion(gameTopics[0]);
-    
-    // Broadcast new question to all clients
+
+    // Emit 'newQuestion' event for the next question
     io.emit('newQuestion', currentQuestion);
-    
+
     res.json(currentQuestion);
-  } catch (error) {
-    console.error('Error generating next question:', error);
-    res.status(500).send({ error: 'Failed to generate the next question' });
   }
 });
 
-app.get('/api/currentQuestion', async (req, res) => {
-  if (!gameStarted) {
-    return res.status(400).send({ error: 'Game has not started yet' });
+app.get('/api/currentQuestion', (req, res) => {
+  if (!gameStarted || !currentQuestion) {
+    return res.status(400).send({ error: 'No current question available' });
   }
-  try {
-    res.send(currentQuestion);
-  } catch (error) {
-    res.status(500).send({ error: 'Failed to get current question' });
-  }
+  res.send(currentQuestion);
 });
 
 app.get('/api/progress', (req, res) => {
@@ -135,7 +158,13 @@ app.post('/api/register', (req, res) => {
 });
 
 app.post('/api/submitAnswer', (req, res) => {
-  const { player, answer } = req.body;
+  const { playerName, answer } = req.body;
+  
+  // Emit when player answers
+  io.emit('playerAnswered', { playerName });
+
+  const player = playerName;
+
   if (!gameStarted) {
     return res.status(400).send({ error: 'Game has not started yet' });
   }
@@ -152,15 +181,33 @@ app.post('/api/submitAnswer', (req, res) => {
   
   // Check if all players have answered
   if (Object.keys(playerAnswers).length === registeredPlayers.length) {
-    const winners = getWinners(); // Use getWinners instead of getWinner
-    generateHostQuip(currentQuestion.question, winners)
-      .then(quip => {
-        io.emit('roundComplete', { 
-          winners,
-          quip,
-          scores: playerScores
+    // Check if anyone got it right
+    const correctAnswers = Object.entries(playerAnswers)
+      .filter(([_, ans]) => ans === currentQuestion.correctAnswer);
+    
+    if (correctAnswers.length === 0) {
+      // No one got it right
+      generateHostQuip('no winners', currentQuestion.correctAnswer)
+        .then(quip => {
+          io.emit('roundComplete', { 
+            winners: [],
+            quip,
+            scores: playerScores,
+            correctAnswer: currentQuestion.correctAnswer
+          });
         });
-      });
+    } else {
+      // Some players got it right
+      const winners = getWinners();
+      generateHostQuip(currentQuestion.question, winners)
+        .then(quip => {
+          io.emit('roundComplete', { 
+            winners,
+            quip,
+            scores: playerScores
+          });
+        });
+    }
   }
   
   res.json({ success: true });
@@ -185,34 +232,32 @@ app.post('/api/generateQuip', async (req, res) => {
   }
 });
 
-function getWinner() {
-  let highestScore = 0;
-  let winner = '';
-  
-  Object.entries(playerScores).forEach(([player, score]) => {
-    if (score > highestScore) {
-      highestScore = score;
-      winner = player;
-    }
-  });
-  
-  return winner;
-}
+app.get('/api/goodbyeQuip', async (req, res) => {
+  try {
+    const quip = await generateGoodbyeQuip();
+    res.json({ quip });
+  } catch (error) {
+    console.error('Error generating goodbye quip:', error);
+    res.status(500).json({ error: 'Failed to generate goodbye quip' });
+  }
+});
 
+// server.js - Add introduction endpoint
+app.get('/api/introductionQuip', async (req, res) => {
+  try {
+    const quip = await generateIntroductionQuip();
+    res.json({ quip });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to generate introduction quip' });
+  }
+});
+
+// Helper function to get the winners
 function getWinners() {
-  let highestScore = 0;
-  let winners = [];
-  
-  // Find highest score
-  Object.entries(playerScores).forEach(([player, score]) => {
-    if (score > highestScore) {
-      highestScore = score;
-      winners = [player];
-    } else if (score === highestScore) {
-      winners.push(player);
-    }
-  });
-  
+  const highestScore = Math.max(...Object.values(playerScores));
+  const winners = Object.keys(playerScores).filter(
+    (player) => playerScores[player] === highestScore
+  );
   return winners;
 }
 

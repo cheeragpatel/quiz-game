@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import io from 'socket.io-client';
 import axios from 'axios';
+import io from 'socket.io-client';
 
-const GameShowView = ({ currentQuestion }) => {
+const GameShowView = () => {
   const [winners, setWinners] = useState([]);
   const [hostQuip, setHostQuip] = useState('');
   const [avatarUrls, setAvatarUrls] = useState({});
@@ -11,6 +11,10 @@ const GameShowView = ({ currentQuestion }) => {
   const [gameOver, setGameOver] = useState(false);
   const [finalScores, setFinalScores] = useState({});
   const [registeredPlayers, setRegisteredPlayers] = useState([]);
+  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [finalWinners, setFinalWinners] = useState([]);
+  const [goodbyeQuip, setGoodbyeQuip] = useState('');
+  const [introQuip, setIntroQuip] = useState('');
 
   useEffect(() => {
     const fetchWelcomeQuip = async () => {
@@ -26,57 +30,76 @@ const GameShowView = ({ currentQuestion }) => {
 
   useEffect(() => {
     const socket = io();
-    
-    socket.on('gameStarted', () => {
+
+    // Listen for the 'gameStarted' event
+    socket.on('gameStarted', (data) => {
       setGameStarted(true);
-      setWelcomeQuip(''); // Clear welcome message
+      setCurrentQuestion(data.currentQuestion);
+      setIntroQuip(data.introQuip);
+      setWelcomeQuip(data.welcomeQuip);
     });
 
-    socket.on('newQuestion', () => {
+    socket.on('newQuestion', (question) => {
+      setCurrentQuestion(question);
       setWinners([]);
       setHostQuip('');
       setAvatarUrls({});
     });
 
     socket.on('roundComplete', async (data) => {
-      console.log('Round complete data:', data); // Debug log
+      console.log('Round complete data:', data);
       
-      if (!data.winner && !data.winners) return;
-
-      // Handle winners array
-      const winnersList = data.winners || 
-        (Array.isArray(data.winner) ? data.winner : [data.winner]);
-
-      if (winnersList.length > 0) {
-        setWinners(winnersList);
-        setHostQuip(data.quip || 'And the winner is...');
+      if (data.winners && data.winners.length === 0) {
+        // No winners case
+        setWinners([]);
+        setHostQuip(`${data.quip}\nThe correct answer was: ${data.correctAnswer}`);
+        setAvatarUrls({});
+      } else {
+        // Normal winners case
+        const winnersList = data.winners || 
+          (Array.isArray(data.winner) ? data.winner : [data.winner]);
         
-        // Fetch avatars
-        const avatars = {};
-        await Promise.all(
-          winnersList.map(async (winner) => {
-            if (!winner) return;
-            try {
-              const response = await fetch(`https://api.github.com/users/${winner}`);
-              if (!response.ok) throw new Error('Avatar fetch failed');
-              const userData = await response.json();
-              avatars[winner] = userData.avatar_url;
-            } catch (error) {
-              console.error(`Error fetching avatar for ${winner}:`, error);
-              avatars[winner] = '/default-avatar.png';
-            }
-          })
-        );
-        setAvatarUrls(avatars);
+        if (winnersList.length > 0) {
+          setWinners(winnersList);
+          setHostQuip(data.quip || 'And the winner is...');
+          
+          // Fetch avatars
+          const avatars = {};
+          await Promise.all(
+            winnersList.map(async (winner) => {
+              if (!winner) return;
+              try {
+                const response = await fetch(`https://api.github.com/users/${winner}`);
+                if (!response.ok) throw new Error('Avatar fetch failed');
+                const userData = await response.json();
+                avatars[winner] = userData.avatar_url;
+              } catch (error) {
+                console.error(`Error fetching avatar for ${winner}:`, error);
+                avatars[winner] = '/default-avatar.png';
+              }
+            })
+          );
+          setAvatarUrls(avatars);
+        }
       }
     });
 
-    socket.on('gameOver', (data) => {
+    socket.on('gameOver', async (data) => {
       setGameOver(true);
-      setWinners(Array.isArray(data.winner) ? data.winner : [data.winner]);
-      setHostQuip(data.quip);
+      setFinalWinners(data.winners);
       setFinalScores(data.finalScores);
-      setGameStarted(false);
+      setHostQuip(data.quip);
+      
+      try {
+        // Get goodbye quip from virtual host
+        const goodbyeQuip = await axios.get('/api/goodbyeQuip');
+        setGoodbyeQuip(goodbyeQuip.data.quip);
+      } catch (error) {
+        console.error('Error fetching goodbye quip:', error);
+        setGoodbyeQuip("That's all folks! See you next time!");
+      }
+      
+      // Fetch avatars...
     });
 
     socket.on('playerRegistered', (players) => {
@@ -84,7 +107,7 @@ const GameShowView = ({ currentQuestion }) => {
       generateWelcomeQuip(players).then(setWelcomeQuip);
     });
 
-    return () => socket.close();
+    return () => socket.disconnect();
   }, []);
 
   const generateWelcomeQuip = async (players) => {
@@ -99,9 +122,73 @@ const GameShowView = ({ currentQuestion }) => {
     }
   };
 
+  // Game over display with champion highlight and final scores
+  if (gameOver) {
+    return (
+      <div className="game-show-container">
+        {/* Main header announcing game completion */}
+        <h1 className="game-show-header">Game Show Finale!</h1>
+
+        {/* Champion section with avatar and celebration message */}
+        <div className="champion-section">
+          <h2>🏆 Champion 🏆</h2>
+          {finalWinners.map((winner) => (
+            <div key={winner} className="champion-display">
+              <img
+                src={avatarUrls[winner]}
+                alt={`${winner}'s avatar`}
+                className="champion-avatar"
+                onError={(e) => {
+                  e.target.src = '/default-avatar.png';
+                }}
+              />
+              <h3>{winner}</h3>
+              <p className="champion-score">Score: {finalScores[winner]}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Celebratory quip about the winner */}
+        <div className="winner-message">
+          <p>{hostQuip}</p>
+        </div>
+
+        {/* Final scoreboard showing all players */}
+        <div className="final-scoreboard">
+          <h3>Final Standings</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Player</th>
+                <th>Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(finalScores)
+                .sort(([, a], [, b]) => b - a)
+                .map(([player, score], index) => (
+                  <tr key={player} className={finalWinners.includes(player) ? 'winner-row' : ''}>
+                    <td>#{index + 1}</td>
+                    <td>{player}</td>
+                    <td>{score}</td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Goodbye message */}
+        <div className="goodbye-message">
+          <p>{goodbyeQuip}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="game-show-container">
-      <h1 className="game-show-header">Welcome to the 70's Quiz Show!</h1>
+      <h1 className="game-show-header">Welcome to Triva Night!</h1>
       
       {!gameStarted && (
         <div className="game-show-welcome">
@@ -110,6 +197,13 @@ const GameShowView = ({ currentQuestion }) => {
           ) : (
             <p>Waiting for players to register...</p>
           )}
+        </div>
+      )}
+
+      {gameStarted && !currentQuestion && (
+        <div className="game-show-welcome">
+          <h2>{introQuip}</h2>
+          <p>{welcomeQuip}</p>
         </div>
       )}
 
