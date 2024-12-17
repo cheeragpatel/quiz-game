@@ -13,38 +13,23 @@ const PlayerView = () => {
   const [finalScores, setFinalScores] = useState({});
 
   useEffect(() => {
+    // Initialize socket connection
     const socket = io();
 
-    const storedPlayer = sessionStorage.getItem('playerName');
-    if (storedPlayer) {
-      setPlayerName(storedPlayer);
-    } else {
-      // Optional: Prompt user to enter their name if not set
-      const name = prompt("Enter your GitHub Handle:");
-      if (name) {
-        setPlayerName(name);
-        sessionStorage.setItem('playerName', name);
-        // Optionally, register the player on the server
-        axios.post('/api/register', { playerName: name }).catch(err => console.error(err));
-      }
-    }
-
-    // Listen for the 'gameStarted' event
+    // Define event handlers inside useEffect
     const handleGameStarted = (data) => {
       setCurrentQuestion(data.currentQuestion);
       setHasAnswered(false);
       setSelectedAnswer('');
-      setScore(0); // Reset score if necessary
+      setScore(0);
     };
-    socket.on('gameStarted', handleGameStarted);
-    // Listen for 'newQuestion' event
+
     const handleNewQuestion = (question) => {
       setCurrentQuestion(question);
       setHasAnswered(false);
       setSelectedAnswer('');
     };
-    socket.on('newQuestion', handleNewQuestion);
-    // Listen for 'scoreUpdate' event
+
     const handleScoreUpdate = (data) => {
       console.log("Score update received:", data);
       if (data.playerName === playerName) {
@@ -56,58 +41,33 @@ const PlayerView = () => {
         }
       }
     };
+
+    // Get stored player name or prompt for new one
+    const storedPlayer = sessionStorage.getItem('playerName');
+    if (storedPlayer) {
+      setPlayerName(storedPlayer);
+    } else {
+      const name = prompt("Enter your GitHub Handle:");
+      if (name) {
+        setPlayerName(name);
+        sessionStorage.setItem('playerName', name);
+        axios.post('/api/register', { githubHandle: name }).catch(err => console.error(err));
+      }
+    }
+
+    // Attach event listeners
+    socket.on('gameStarted', handleGameStarted);
+    socket.on('newQuestion', handleNewQuestion);
     socket.on('scoreUpdate', handleScoreUpdate);
-      }
-    });
 
-    // Listen for 'roundComplete' event (optional)
-    socket.on('roundComplete', (data) => {
-      // Handle round completion if needed
-    // Listen for 'gameOver' event
-    const handleGameOver = (data) => {
-      setGameOver(true);
-      const playerRank = Object.entries(data.finalScores)
-        .sort(([, a], [, b]) => b - a)
-        .findIndex(([player]) => player === playerName) + 1;
-      
-      let personalQuip = '';
-      if (data.finalScores[playerName] === 0) {
-        personalQuip = "Better luck next time! Even the greatest game show contestants started somewhere!";
-      } else if (playerRank === 1) {
-        personalQuip = `Congratulations! You're the champion with ${data.finalScores[playerName]} points!`;
-      } else {
-        personalQuip = `You finished #${playerRank} with ${data.finalScores[playerName]} points - not too shabby!`;
-      }
-      
-      setHostQuip(personalQuip);
-      setFinalScores(data.finalScores);
-    };
-
-    socket.on('gameOver', handleGameOver);
-
+    // Cleanup function
     return () => {
-      socket.off('gameOver', handleGameOver);
-      socket.off('scoreUpdate', handleScoreUpdate);
-      socket.off('newQuestion', handleNewQuestion);
       socket.off('gameStarted', handleGameStarted);
-      socket.disconnect();
-    };
-      socket.off('gameOver', handleGameOver);
-      socket.disconnect();
-    };
-    return () => {
+      socket.off('newQuestion', handleNewQuestion);
       socket.off('scoreUpdate', handleScoreUpdate);
       socket.disconnect();
     };
-    return () => {
-      socket.off('newQuestion', handleNewQuestion);
-      socket.disconnect();
-    };
-    return () => {
-      socket.off('gameStarted', handleGameStarted);
-      socket.disconnect();
-    };
-  }, [playerName]); // Add playerName as a dependency
+  }, [playerName]); // Add playerName as dependency
 
   // Handle answer submission
   const submitAnswer = async () => {
