@@ -41,7 +41,7 @@ async function generateQuestionsBatch(topic, numQuestions) {
       max_tokens: Math.min(numQuestions * 150, 2048), // Adjusted for multiple questions with an upper limit
       temperature: 0.7,
       top_p: 1.0,
-    const validQuestions = questions.filter(q => q.question && Array.isArray(q.choices) && q.correctAnswer && q.choices.includes(q.correctAnswer));
+    });
 
     let questionsData = response.data.choices[0].message.content;
 
