@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
+import PlayerStatus from './components/PlayerStatus';
+import ResponseStatus from './components/ResponseStatus';
 
 const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   const [numQuestions, setNumQuestions] = useState(10);
@@ -153,48 +155,13 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
     }
   };
 
-  const ResponseStatus = () => (
-    <div className="response-status">
-      <h3>Player Responses</h3>
-      <div className="response-grid">
-        {players.map(player => (
-          <div 
-            key={player.githubHandle}
-            className={`response-indicator ${playerResponses[player.githubHandle] ? 'answered' : 'waiting'}`}
-          >
-            <span className="player-name">{player.githubHandle}</span>
-            <span className="response-icon">
-              {playerResponses[player.githubHandle] ? '✓' : '⌛'}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderPlayerStatus = () => (
-    <div className="game-show-container">
-      <h3>Player Responses</h3>
-      <div className="game-show-choices">
-        {players.map((player) => (
-          <li 
-            key={player.githubHandle}
-            className={responseStatus[player.githubHandle] ? 'answered' : 'waiting'}
-          >
-            {player.githubHandle}: {responseStatus[player.githubHandle] ? '✓ Answered' : '⌛ Waiting'}
-          </li>
-        ))}
-      </div>
-    </div>
-  );
-
   if (gameStatus === 'started') {
     return (
       <div>
         <h2>Game in Progress</h2>
         {/* Display current question or other game details */}
-        <ResponseStatus />
-        {renderPlayerStatus()}
+        <ResponseStatus players={players} responseStatus={responseStatus} />
+        <PlayerStatus players={players} responseStatus={responseStatus} />
       </div>
     );
   }

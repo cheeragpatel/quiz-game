@@ -11,19 +11,12 @@ const configuration = new Configuration({
 
 const openai = new OpenAIApi(configuration);
 
-async function generateQuestions(topic, numQuestions) {
-  const maxQuestionsPerRequest = 10;
-  let allQuestions = [];
-
-  for (let i = 0; i < Math.ceil(numQuestions / maxQuestionsPerRequest); i++) {
-    const questionsToGenerate = Math.min(maxQuestionsPerRequest, numQuestions - i * maxQuestionsPerRequest);
-    const questions = await generateQuestionsBatch(topic, questionsToGenerate);
-    allQuestions = allQuestions.concat(questions);
-  }
-
-  return allQuestions;
-}
-
+/**
+ * Generates a batch of questions using OpenAI's API.
+ * @param {string} topic - The topic for the questions.
+ * @param {number} numQuestions - The number of questions to generate.
+ * @returns {Promise<Array>} - A promise that resolves to an array of questions.
+ */
 async function generateQuestionsBatch(topic, numQuestions) {
   try {
     const response = await openai.createChatCompletion({
@@ -62,6 +55,25 @@ async function generateQuestionsBatch(topic, numQuestions) {
     console.error('Error generating questions:', error);
     throw new Error('Failed to generate questions');
   }
+}
+
+/**
+ * Generates questions by batching requests to OpenAI's API.
+ * @param {string} topic - The topic for the questions.
+ * @param {number} numQuestions - The total number of questions to generate.
+ * @returns {Promise<Array>} - A promise that resolves to an array of questions.
+ */
+async function generateQuestions(topic, numQuestions) {
+  const maxQuestionsPerRequest = 10;
+  const questionBatches = [];
+
+  for (let i = 0; i < Math.ceil(numQuestions / maxQuestionsPerRequest); i++) {
+    const questionsToGenerate = Math.min(maxQuestionsPerRequest, numQuestions - i * maxQuestionsPerRequest);
+    questionBatches.push(generateQuestionsBatch(topic, questionsToGenerate));
+  }
+
+  const allQuestions = await Promise.all(questionBatches);
+  return allQuestions.flat();
 }
 
 module.exports = { generateQuestions, generateQuestionsBatch };
