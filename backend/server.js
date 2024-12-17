@@ -91,7 +91,7 @@ app.post('/api/startGame', async (req, res) => {
 
 app.post('/api/endGame', (req, res) => {
   gameState.gameStarted = false;
-  const finalWinner = getWinner();
+  const finalWinner = getWinners();
   
   generateHostQuip('game over', finalWinner)
     .then(quip => {
