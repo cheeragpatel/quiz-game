@@ -28,14 +28,21 @@ function App() {
       // Handle game over state
     };
 
+    const handleReconnectState = (state) => {
+      setGameStatus(state.gameStarted ? 'started' : 'not started');
+      setCurrentQuestion(state.currentQuestion);
+    };
+
     socket.on('gameStarted', handleGameStarted);
     socket.on('newQuestion', handleNewQuestion);
     socket.on('gameOver', handleGameOver);
+    socket.on('reconnectState', handleReconnectState);
 
     return () => {
       socket.off('gameStarted', handleGameStarted);
       socket.off('newQuestion', handleNewQuestion);
       socket.off('gameOver', handleGameOver);
+      socket.off('reconnectState', handleReconnectState);
       socket.close();
     };
   }, []);

@@ -114,6 +114,21 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
     return () => socket.disconnect();
   }, []);
 
+  // Add socket listener for reconnection
+  useEffect(() => {
+    const socket = io();
+
+    socket.on('reconnectState', (state) => {
+      setGameStatus(state.gameStarted ? 'started' : 'not started');
+      setCurrentQuestion(state.currentQuestion);
+      setPlayers(state.registeredPlayers);
+      setScores(state.playerScores);
+      setResponseStatus(state.playerAnswers);
+    });
+
+    return () => socket.disconnect();
+  }, []);
+
   const handleNumQuestionsChange = (e) => {
     setNumQuestions(e.target.value);
   };
