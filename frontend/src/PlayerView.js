@@ -42,6 +42,19 @@ const PlayerView = () => {
       }
     };
 
+    const handleGameOver = (data) => {
+      setGameOver(true);
+      setHostQuip(data.quip);
+      setFinalScores(data.finalScores);
+    };
+
+    const handleReconnectState = (state) => {
+      setCurrentQuestion(state.currentQuestion);
+      setScore(state.playerScores[playerName] || 0);
+      setHasAnswered(!!state.playerAnswers[playerName]);
+      setGameOver(!state.gameStarted);
+    };
+
     // Get stored player name or prompt for new one
     const storedPlayer = sessionStorage.getItem('playerName');
     if (storedPlayer) {
@@ -59,12 +72,16 @@ const PlayerView = () => {
     socket.on('gameStarted', handleGameStarted);
     socket.on('newQuestion', handleNewQuestion);
     socket.on('scoreUpdate', handleScoreUpdate);
+    socket.on('gameOver', handleGameOver);
+    socket.on('reconnectState', handleReconnectState);
 
     // Cleanup function
     return () => {
       socket.off('gameStarted', handleGameStarted);
       socket.off('newQuestion', handleNewQuestion);
       socket.off('scoreUpdate', handleScoreUpdate);
+      socket.off('gameOver', handleGameOver);
+      socket.off('reconnectState', handleReconnectState);
       socket.disconnect();
     };
   }, [playerName]); // Add playerName as dependency

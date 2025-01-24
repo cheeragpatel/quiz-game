@@ -39,6 +39,32 @@ class GameState {
     this.playerScores = {};
     this.totalQuestions = 10;
   }
+
+  saveState() {
+    return {
+      gameStarted: this.gameStarted,
+      gameTopics: this.gameTopics,
+      currentQuestionIndex: this.currentQuestionIndex,
+      questionsList: this.questionsList,
+      currentQuestion: this.currentQuestion,
+      playerAnswers: this.playerAnswers,
+      registeredPlayers: this.registeredPlayers,
+      playerScores: this.playerScores,
+      totalQuestions: this.totalQuestions
+    };
+  }
+
+  loadState(state) {
+    this.gameStarted = state.gameStarted;
+    this.gameTopics = state.gameTopics;
+    this.currentQuestionIndex = state.currentQuestionIndex;
+    this.questionsList = state.questionsList;
+    this.currentQuestion = state.currentQuestion;
+    this.playerAnswers = state.playerAnswers;
+    this.registeredPlayers = state.registeredPlayers;
+    this.playerScores = state.playerScores;
+    this.totalQuestions = state.totalQuestions;
+  }
 }
 
 const gameState = new GameState();
@@ -266,6 +292,14 @@ app.get('/api/introductionQuip', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Failed to generate introduction quip' });
   }
+});
+
+// Handle player reconnections
+io.on('connection', (socket) => {
+  socket.on('reconnect', () => {
+    const currentState = gameState.saveState();
+    socket.emit('reconnectState', currentState);
+  });
 });
 
 // Helper function to get the winners

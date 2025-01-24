@@ -17,6 +17,7 @@ const GameShowView = () => {
   const [finalWinners, setFinalWinners] = useState([]);
   const [goodbyeQuip, setGoodbyeQuip] = useState('');
   const [introQuip, setIntroQuip] = useState('');
+  const [responseStatus, setResponseStatus] = useState({});
 
   useEffect(() => {
     const fetchWelcomeQuip = async () => {
@@ -46,6 +47,7 @@ const GameShowView = () => {
       setWinners([]);
       setHostQuip('');
       setAvatarUrls({});
+      setResponseStatus({});
     });
 
     socket.on('roundComplete', async (data) => {
@@ -107,6 +109,21 @@ const GameShowView = () => {
     socket.on('playerRegistered', (players) => {
       setRegisteredPlayers(players);
       generateWelcomeQuip(players).then(setWelcomeQuip);
+    });
+
+    socket.on('playerAnswered', (data) => {
+      setResponseStatus(prev => ({
+        ...prev,
+        [data.playerName]: true
+      }));
+    });
+
+    socket.on('reconnectState', (state) => {
+      setGameStarted(state.gameStarted);
+      setCurrentQuestion(state.currentQuestion);
+      setRegisteredPlayers(state.registeredPlayers);
+      setFinalScores(state.playerScores);
+      setResponseStatus(state.playerAnswers);
     });
 
     return () => socket.disconnect();
@@ -281,8 +298,8 @@ const GameShowView = () => {
           </div>
         )
       )}
-      <PlayerStatus players={registeredPlayers} responseStatus={{}} />
-      <ResponseStatus players={registeredPlayers} responseStatus={{}} />
+      <PlayerStatus players={registeredPlayers} responseStatus={responseStatus} />
+      <ResponseStatus players={registeredPlayers} responseStatus={responseStatus} />
     </div>
   );
 };
