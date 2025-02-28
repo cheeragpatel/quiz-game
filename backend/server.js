@@ -2,6 +2,8 @@ const express = require('express');
 const path = require('path');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+const { createClient } = require('redis');
+const { createAdapter } = require('@socket.io/redis-adapter');
 const { generateQuestions } = require('./questionGenerator');
 const { 
   generateHostQuip, 
@@ -13,6 +15,17 @@ const app = express();
 const port = process.env.PORT || 3001;
 const httpServer = createServer(app);
 const io = new Server(httpServer);
+
+// Redis client setup
+const redisClient = createClient();
+redisClient.connect().catch(console.error);
+
+// Redis adapter for socket.io
+const pubClient = createClient();
+const subClient = createClient();
+Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
+  io.adapter(createAdapter(pubClient, subClient));
+});
 
 // Encapsulated game state
 class GameState {
@@ -54,16 +67,24 @@ class GameState {
     };
   }
 
-  loadState(state) {
-    this.gameStarted = state.gameStarted;
-    this.gameTopics = state.gameTopics;
-    this.currentQuestionIndex = state.currentQuestionIndex;
-    this.questionsList = state.questionsList;
-    this.currentQuestion = state.currentQuestion;
-    this.playerAnswers = state.playerAnswers;
-    this.registeredPlayers = state.registeredPlayers;
-    this.playerScores = state.playerScores;
-    this.totalQuestions = state.totalQuestions;
+  async persistState() {
+    const state = this.saveState();
+    await redisClient.set('gameState', JSON.stringify(state));
+  }
+
+  async loadState() {
+    const state = JSON.parse(await redisClient.get('gameState'));
+    if (state) {
+      this.gameStarted = state.gameStarted;
+      this.gameTopics = state.gameTopics;
+      this.currentQuestionIndex = state.currentQuestionIndex;
+      this.questionsList = state.questionsList;
+      this.currentQuestion = state.currentQuestion;
+      this.playerAnswers = state.playerAnswers;
+      this.registeredPlayers = state.registeredPlayers;
+      this.playerScores = state.playerScores;
+      this.totalQuestions = state.totalQuestions;
+    }
   }
 }
 
@@ -103,6 +124,8 @@ app.post('/api/startGame', async (req, res) => {
       welcomeQuip
     });
 
+    await gameState.persistState();
+
     res.send({ 
       message: 'Game started',
       currentQuestion: gameState.currentQuestion,
@@ -115,20 +138,22 @@ app.post('/api/startGame', async (req, res) => {
   }
 });
 
-app.post('/api/endGame', (req, res) => {
+app.post('/api/endGame', async (req, res) => {
   gameState.gameStarted = false;
   const finalWinner = getWinners();
   
   generateHostQuip('game over', finalWinner)
-    .then(quip => {
+    .then(async quip => {
       io.emit('gameOver', { 
         winner: finalWinner,
         quip: quip,
         finalScores: gameState.playerScores
       });
+      await gameState.persistState();
     });
 
   gameState.reset();
+  await gameState.persistState();
   res.send({ message: 'Game ended', winner: finalWinner });
 });
 
@@ -153,6 +178,7 @@ app.post('/api/nextQuestion', async (req, res) => {
     });
 
     gameState.gameStarted = false; // Reset game state
+    await gameState.persistState();
     res.json({ gameOver: true });
   } else {
     // Continue to next question
@@ -161,6 +187,8 @@ app.post('/api/nextQuestion', async (req, res) => {
 
     // Emit 'newQuestion' event for the next question
     io.emit('newQuestion', gameState.currentQuestion);
+
+    await gameState.persistState();
 
     res.json(gameState.currentQuestion);
   }
@@ -189,17 +217,18 @@ app.get('/api/players', (req, res) => {
   res.json(gameState.registeredPlayers);
 });
 
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { githubHandle } = req.body;
   gameState.registeredPlayers.push({ 
     githubHandle,
     joinedAt: new Date()
   });
   io.emit('playerRegistered', gameState.registeredPlayers);
+  await gameState.persistState();
   res.json({ success: true });
 });
 
-app.post('/api/submitAnswer', (req, res) => {
+app.post('/api/submitAnswer', async (req, res) => {
   const { playerName, answer } = req.body;
   
   const player = playerName;
@@ -230,26 +259,30 @@ app.post('/api/submitAnswer', (req, res) => {
     if (correctAnswers.length === 0) {
       // No one got it right
       generateHostQuip('no winners', gameState.currentQuestion.correctAnswer)
-        .then(quip => {
+        .then(async quip => {
           io.emit('roundComplete', { 
             winners: [],
             quip,
             scores: gameState.playerScores,
             correctAnswer: gameState.currentQuestion.correctAnswer
           });
+          await gameState.persistState();
         });
     } else {
       // Some players got it right
       const winners = getWinners();
       generateHostQuip(gameState.currentQuestion.question, winners)
-        .then(quip => {
+        .then(async quip => {
           io.emit('roundComplete', { 
             winners,
             quip,
             scores: gameState.playerScores
           });
+          await gameState.persistState();
         });
     }
+  } else {
+    await gameState.persistState();
   }
   
   res.json({ success: true });
@@ -296,7 +329,8 @@ app.get('/api/introductionQuip', async (req, res) => {
 
 // Handle player reconnections
 io.on('connection', (socket) => {
-  socket.on('reconnect', () => {
+  socket.on('reconnect', async () => {
+    await gameState.loadState();
     const currentState = gameState.saveState();
     socket.emit('reconnectState', currentState);
   });
