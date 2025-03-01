@@ -1,16 +1,13 @@
-const { Configuration, OpenAIApi } = require("openai");
+import OpenAI from 'openai';
 
-const token = process.env["OPENAI_API_KEY"];
-const endpoint = "https://api.openai.com/v1";
-const modelName = "gpt-4o";
+const token = process.env['OPENAI_API_KEY'];
+const endpoint = 'https://api.openai.com/v1';
+const modelName = 'gpt-4o';
 
-const configuration = new Configuration({
+const openai = new OpenAI({
   apiKey: token,
-  basePath: endpoint,
-});
-
-const openai = new OpenAIApi(configuration);
-
+  baseURL: endpoint,
+})
 /**
  * Generates a batch of questions using OpenAI's API.
  * @param {string} topic - The topic for the questions.
@@ -19,7 +16,7 @@ const openai = new OpenAIApi(configuration);
  */
 async function generateQuestionsBatch(topic, numQuestions) {
   try {
-    const response = await openai.createChatCompletion({
+    const response = await openai.chat.completions.create({
       model: modelName,
       messages: [
         {
@@ -36,7 +33,7 @@ async function generateQuestionsBatch(topic, numQuestions) {
       top_p: 1.0,
     });
 
-    let questionsData = response.data.choices[0].message.content;
+    let questionsData = response.choices[0].message.content;
 
     // Extract JSON array from response
     questionsData = questionsData.substring(
@@ -76,4 +73,4 @@ async function generateQuestions(topic, numQuestions) {
   return allQuestions.flat();
 }
 
-module.exports = { generateQuestions, generateQuestionsBatch };
+export { generateQuestions, generateQuestionsBatch };

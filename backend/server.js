@@ -17,12 +17,18 @@ const httpServer = createServer(app);
 const io = new Server(httpServer);
 
 // Redis client setup
-const redisClient = createClient();
+const redisClient = createClient({
+  url: 'redis://localhost:6379'
+});
 redisClient.connect().catch(console.error);
 
 // Redis adapter for socket.io
-const pubClient = createClient();
-const subClient = createClient();
+const pubClient = createClient({
+  url: 'redis://localhost:6379'
+});
+const subClient = createClient({
+  url: 'redis://localhost:6379'
+});
 Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
   io.adapter(createAdapter(pubClient, subClient));
 });

@@ -3,5 +3,7 @@
     "test": "npm test",
     "build": "npm install",
     "launch": "npm start"
-  }
+  },
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "app"
 }

@@ -8,14 +8,16 @@
     "build": "cd frontend && npm install && npm run build"
   },
   "dependencies": {
-    "axios": "^0.21.4",
-    "concurrently": "^6.2.1",
-    "express": "^4.17.1",
-    "openai": "^3.0.0",
-    "react": "^17.0.2",
-    "react-dom": "^17.0.2",
-    "react-scripts": "4.0.3",
-    "socket.io": "^4.8.1"
+    "axios": "^1.8.1",
+    "concurrently": "^9.1.2",
+    "express": "^4.21.2",
+    "openai": "^4.86.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-scripts": "5.0.1",
+    "socket.io": "^4.8.1",
+    "redis": "^4.7.0",
+    "@socket.io/redis-adapter": "^8.3.0"
   },
   "author": "",
   "license": "ISC"
