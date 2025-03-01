@@ -453,7 +453,7 @@ io.on('connection', (socket) => {
   // Send current player count to all clients
   io.emit('playerCount', io.engine.clientsCount);
   
-  socket.on('reconnect', async () => {
+  socket.on('reconnectStateRequest', async () => {
     console.log(`Player reconnected: ${socket.id}`);
     await gameState.loadState();
     const currentState = gameState.saveState();
