@@ -13,6 +13,7 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   const [hostQuip, setHostQuip] = useState('');
   const [gameOver, setGameOver] = useState(false);
   const [finalScores, setFinalScores] = useState({});
+  // eslint-disable-next-line no-unused-vars
   const [playerResponses, setPlayerResponses] = useState({});
   const [responseStatus, setResponseStatus] = useState({});
 
@@ -50,6 +51,7 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   }, []);
 
   // Add socket listener for game over
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const socket = io();
     socket.on('gameOver', (data) => {
@@ -63,6 +65,7 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   }, [setGameStatus]);
 
   // Add socket listener for game started
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const socket = io();
 
@@ -73,7 +76,7 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
     });
 
     return () => socket.disconnect();
-  }, []);
+  }, [setCurrentQuestion, setGameStatus]);
 
   // Add socket listener for responses
   useEffect(() => {
@@ -115,6 +118,7 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   }, []);
 
   // Add socket listener for reconnection
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const socket = io();
 
@@ -127,7 +131,7 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
     });
 
     return () => socket.disconnect();
-  }, []);
+  }, [setCurrentQuestion, setGameStatus]);
 
   const handleNumQuestionsChange = (e) => {
     setNumQuestions(e.target.value);
@@ -170,6 +174,19 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
     }
   };
 
+  // New function to reset game state and prepare for a new game
+  const newGame = () => {
+    // Reset all game state
+    setGameOver(false);
+    setWinner(null);
+    setHostQuip('');
+    setScores({});
+    setFinalScores({});
+    setResponseStatus({});
+    setPlayerResponses({});
+    setGameStatus('not started');
+  };
+
   if (gameStatus === 'started') {
     return (
       <div>
@@ -177,6 +194,12 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
         {/* Display current question or other game details */}
         <ResponseStatus players={players} responseStatus={responseStatus} />
         <PlayerStatus players={players} responseStatus={responseStatus} />
+
+        {/* Game control buttons during active game */}
+        <div className="game-controls">
+          <button className="game-show-button" onClick={nextQuestion}>Next Question</button>
+          <button className="game-show-button" onClick={endGame}>End Game</button>
+        </div>
       </div>
     );
   }
@@ -201,6 +224,8 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
                   ))}
               </ul>
             </div>
+            {/* New Game button */}
+            <button className="game-show-button new-game-button" onClick={newGame}>Start New Game</button>
           </div>
         </div>
       ) : (

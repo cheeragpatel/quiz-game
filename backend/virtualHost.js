@@ -45,7 +45,7 @@ async function generateHostQuip(context, winners) {
       top_p: 1.0,
     });
 
-    let quip = response.choices[0].message?.content;
+    let quip = response.choices[0].message.content;
     quip = quip ? quip.trim() : "Right on!";
     return quip;
   } catch (error) {
@@ -95,7 +95,7 @@ async function generateGoodbyeQuip() {
       top_p: 1.0,
     });
 
-    let quip = response.choices[0].message?.content;
+    let quip = response.choices[0].message.content;
     return quip ? quip.trim() : "That's our show folks! See you next time!";
   } catch (error) {
     console.error('Error generating goodbye quip:', error);
@@ -122,7 +122,7 @@ async function generateIntroductionQuip() {
       top_p: 1.0,
     });
 
-    let quip = response.choices[0].message?.content;
+    let quip = response.choices[0].message.content;
     return quip ? quip.trim() : "Hi folks! I'm Mona Woolery, and this is THE QUIZ SHOW!";
   } catch (error) {
     console.error('Error generating introduction quip:', error);

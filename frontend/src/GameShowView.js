@@ -19,6 +19,22 @@ const GameShowView = () => {
   const [introQuip, setIntroQuip] = useState('');
   const [responseStatus, setResponseStatus] = useState({});
 
+  // Fetch initial players when component mounts
+  useEffect(() => {
+    const fetchPlayers = async () => {
+      try {
+        const response = await axios.get('/api/players');
+        setRegisteredPlayers(response.data);
+        if (response.data.length > 0) {
+          generateWelcomeQuip(response.data).then(setWelcomeQuip);
+        }
+      } catch (error) {
+        console.error('Error fetching players:', error);
+      }
+    };
+    fetchPlayers();
+  }, []);
+
   useEffect(() => {
     const fetchWelcomeQuip = async () => {
       try {
