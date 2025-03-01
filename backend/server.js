@@ -2,6 +2,8 @@ const express = require('express');
 const path = require('path');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
+const { createClient } = require('redis');
+const { createAdapter } = require('@socket.io/redis-adapter');
 const { generateQuestions } = require('./questionGenerator');
 const { 
   generateHostQuip, 
@@ -14,18 +16,78 @@ const port = process.env.PORT || 3001;
 const httpServer = createServer(app);
 const io = new Server(httpServer);
 
-// Encapsulated game state
+// Enhanced Redis client setup with logging
+console.log('Initializing Redis connections...');
+const redisClient = createClient({
+  url: 'redis://localhost:6379'
+});
+
+// Add Redis client event listeners for connection status
+redisClient.on('connect', () => console.log('Main Redis client: connecting...'));
+redisClient.on('ready', () => console.log('Main Redis client: connected and ready'));
+redisClient.on('error', (err) => console.error('Main Redis client error:', err));
+redisClient.on('reconnecting', () => console.log('Main Redis client: reconnecting...'));
+redisClient.on('end', () => console.log('Main Redis client: connection closed'));
+
+redisClient.connect().catch(err => {
+  console.error('Failed to connect main Redis client:', err);
+});
+
+// Redis adapter for socket.io with enhanced logging
+const pubClient = createClient({
+  url: 'redis://localhost:6379'
+});
+const subClient = createClient({
+  url: 'redis://localhost:6379'
+});
+
+// Add event listeners for pub/sub clients
+pubClient.on('connect', () => console.log('Redis PUB client: connecting...'));
+pubClient.on('ready', () => console.log('Redis PUB client: connected and ready'));
+pubClient.on('error', (err) => console.error('Redis PUB client error:', err));
+
+subClient.on('connect', () => console.log('Redis SUB client: connecting...'));
+subClient.on('ready', () => console.log('Redis SUB client: connected and ready'));
+subClient.on('error', (err) => console.error('Redis SUB client error:', err));
+
+// Function to clear Socket.IO sessions from Redis
+async function clearSocketSessions() {
+  try {
+    console.log('Clearing old Socket.IO sessions from Redis...');
+    
+    // Get all keys related to Socket.IO
+    const socketKeys = await redisClient.keys('socket.io*');
+    
+    if (socketKeys && socketKeys.length > 0) {
+      console.log(`Found ${socketKeys.length} Socket.IO related keys to clear`);
+      // Delete all Socket.IO related keys
+      await redisClient.del(socketKeys);
+      console.log('Successfully cleared old Socket.IO sessions');
+    } else {
+      console.log('No Socket.IO sessions found to clear');
+    }
+  } catch (error) {
+    console.error('Error clearing Socket.IO sessions:', error);
+  }
+}
+
+Promise.all([pubClient.connect(), subClient.connect()]).then(async () => {
+  console.log('Setting up Socket.IO Redis adapter');
+  io.adapter(createAdapter(pubClient, subClient));
+  console.log('Socket.IO Redis adapter setup complete');
+  
+  // Clear socket sessions on server startup
+  await clearSocketSessions();
+}).catch(err => {
+  console.error('Failed to setup Redis adapter for Socket.IO:', err);
+});
+
+// Encapsulated game state with enhanced logging
 class GameState {
   constructor() {
-    this.gameStarted = false;
-    this.gameTopics = [];
-    this.currentQuestionIndex = 0;
-    this.questionsList = [];
-    this.currentQuestion = null;
-    this.playerAnswers = {};
-    this.registeredPlayers = [];
-    this.playerScores = {};
-    this.totalQuestions = 10;
+    this.activeConnections = new Set(); // Track active connections
+    this.reset();
+    console.log('Game state initialized with default values');
   }
 
   reset() {
@@ -38,10 +100,110 @@ class GameState {
     this.registeredPlayers = [];
     this.playerScores = {};
     this.totalQuestions = 10;
+    this.activeConnections.clear(); // Clear active connections
+    console.log('Game state reset to default values');
+  }
+
+  // Called on server restart to clean old session state
+  resetConnectionState() {
+    this.activeConnections.clear();
+    this.playerAnswers = {};
+    this.registeredPlayers = [];
+    if (this.gameStarted) {
+      console.log('Resetting connection state while preserving game progress');
+    } else {
+      console.log('Resetting connection state with no active game');
+    }
+  }
+
+  saveState() {
+    const state = {
+      gameStarted: this.gameStarted,
+      gameTopics: this.gameTopics,
+      currentQuestionIndex: this.currentQuestionIndex,
+      questionsList: this.questionsList,
+      currentQuestion: this.currentQuestion,
+      playerAnswers: this.playerAnswers,
+      registeredPlayers: this.registeredPlayers,
+      playerScores: this.playerScores,
+      totalQuestions: this.totalQuestions
+    };
+    console.log(`Game state prepared for saving: ${JSON.stringify({
+      gameStarted: state.gameStarted,
+      currentQuestionIndex: state.currentQuestionIndex,
+      registeredPlayersCount: state.registeredPlayers.length,
+      playerAnswersCount: Object.keys(state.playerAnswers).length,
+      playerScoresCount: Object.keys(state.playerScores).length
+    })}`);
+    return state;
+  }
+
+  async persistState() {
+    const state = this.saveState();
+    try {
+      await redisClient.set('gameState', JSON.stringify(state));
+      console.log(`Game state successfully persisted to Redis at ${new Date().toISOString()}`);
+    } catch (error) {
+      console.error('Failed to persist game state to Redis:', error);
+    }
+  }
+
+  async loadState() {
+    try {
+      const stateJson = await redisClient.get('gameState');
+      if (!stateJson) {
+        console.log('No existing game state found in Redis');
+        return;
+      }
+      
+      console.log('Loading game state from Redis');
+      const state = JSON.parse(stateJson);
+      
+      this.gameStarted = state.gameStarted;
+      this.gameTopics = state.gameTopics;
+      this.currentQuestionIndex = state.currentQuestionIndex;
+      this.questionsList = state.questionsList;
+      this.currentQuestion = state.currentQuestion;
+      this.playerAnswers = state.playerAnswers;
+      this.registeredPlayers = state.registeredPlayers;
+      this.playerScores = state.playerScores;
+      this.totalQuestions = state.totalQuestions;
+      
+      console.log(`Game state loaded from Redis: ${JSON.stringify({
+        gameStarted: this.gameStarted,
+        currentQuestionIndex: this.currentQuestionIndex,
+        registeredPlayersCount: this.registeredPlayers.length,
+        playerAnswersCount: Object.keys(this.playerAnswers).length,
+        playerScoresCount: Object.keys(this.playerScores).length
+      })}`);
+    } catch (error) {
+      console.error('Failed to load game state from Redis:', error);
+    }
   }
 }
 
 const gameState = new GameState();
+
+// Load game state on server startup
+(async () => {
+  try {
+    // First clear any socket sessions
+    await clearSocketSessions();
+    
+    // Then load persistent game state
+    await gameState.loadState();
+    
+    // Reset connection-specific state while preserving game data
+    gameState.resetConnectionState();
+    
+    // Persist the clean state
+    await gameState.persistState();
+    
+    console.log('Initial game state loaded and connection state reset on server startup');
+  } catch (error) {
+    console.error('Failed to initialize game state:', error);
+  }
+})();
 
 app.use(express.json());
 
@@ -77,6 +239,8 @@ app.post('/api/startGame', async (req, res) => {
       welcomeQuip
     });
 
+    await gameState.persistState();
+
     res.send({ 
       message: 'Game started',
       currentQuestion: gameState.currentQuestion,
@@ -89,20 +253,22 @@ app.post('/api/startGame', async (req, res) => {
   }
 });
 
-app.post('/api/endGame', (req, res) => {
+app.post('/api/endGame', async (req, res) => {
   gameState.gameStarted = false;
   const finalWinner = getWinners();
   
   generateHostQuip('game over', finalWinner)
-    .then(quip => {
+    .then(async quip => {
       io.emit('gameOver', { 
         winner: finalWinner,
         quip: quip,
         finalScores: gameState.playerScores
       });
+      await gameState.persistState();
     });
 
   gameState.reset();
+  await gameState.persistState();
   res.send({ message: 'Game ended', winner: finalWinner });
 });
 
@@ -127,6 +293,7 @@ app.post('/api/nextQuestion', async (req, res) => {
     });
 
     gameState.gameStarted = false; // Reset game state
+    await gameState.persistState();
     res.json({ gameOver: true });
   } else {
     // Continue to next question
@@ -135,6 +302,8 @@ app.post('/api/nextQuestion', async (req, res) => {
 
     // Emit 'newQuestion' event for the next question
     io.emit('newQuestion', gameState.currentQuestion);
+
+    await gameState.persistState();
 
     res.json(gameState.currentQuestion);
   }
@@ -163,17 +332,18 @@ app.get('/api/players', (req, res) => {
   res.json(gameState.registeredPlayers);
 });
 
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   const { githubHandle } = req.body;
   gameState.registeredPlayers.push({ 
     githubHandle,
     joinedAt: new Date()
   });
   io.emit('playerRegistered', gameState.registeredPlayers);
+  await gameState.persistState();
   res.json({ success: true });
 });
 
-app.post('/api/submitAnswer', (req, res) => {
+app.post('/api/submitAnswer', async (req, res) => {
   const { playerName, answer } = req.body;
   
   const player = playerName;
@@ -204,26 +374,30 @@ app.post('/api/submitAnswer', (req, res) => {
     if (correctAnswers.length === 0) {
       // No one got it right
       generateHostQuip('no winners', gameState.currentQuestion.correctAnswer)
-        .then(quip => {
+        .then(async quip => {
           io.emit('roundComplete', { 
             winners: [],
             quip,
             scores: gameState.playerScores,
             correctAnswer: gameState.currentQuestion.correctAnswer
           });
+          await gameState.persistState();
         });
     } else {
       // Some players got it right
       const winners = getWinners();
       generateHostQuip(gameState.currentQuestion.question, winners)
-        .then(quip => {
+        .then(async quip => {
           io.emit('roundComplete', { 
             winners,
             quip,
             scores: gameState.playerScores
           });
+          await gameState.persistState();
         });
     }
+  } else {
+    await gameState.persistState();
   }
   
   res.json({ success: true });
@@ -268,6 +442,37 @@ app.get('/api/introductionQuip', async (req, res) => {
   }
 });
 
+// Enhanced Socket.IO connection handling
+io.on('connection', (socket) => {
+  console.log(`Socket connected: ${socket.id}`);
+  
+  // Track this connection in our game state
+  gameState.activeConnections.add(socket.id);
+  console.log(`Active connections: ${gameState.activeConnections.size}`);
+  
+  // Send current player count to all clients
+  io.emit('playerCount', io.engine.clientsCount);
+  
+  socket.on('reconnectStateRequest', async () => {
+    console.log(`Player reconnected: ${socket.id}`);
+    await gameState.loadState();
+    const currentState = gameState.saveState();
+    socket.emit('reconnectState', currentState);
+    console.log(`Reconnect state sent to socket ${socket.id}`);
+  });
+  
+  socket.on('disconnect', (reason) => {
+    console.log(`Socket disconnected: ${socket.id}, reason: ${reason}`);
+    
+    // Remove this connection from our tracking
+    gameState.activeConnections.delete(socket.id);
+    console.log(`Active connections: ${gameState.activeConnections.size}`);
+    
+    // Send updated player count to all clients
+    io.emit('playerCount', io.engine.clientsCount);
+  });
+});
+
 // Helper function to get the winners
 function getWinners() {
   const highestScore = Math.max(...Object.values(gameState.playerScores));
@@ -285,4 +490,5 @@ app.get('*', (req, res) => {
 // Replace app.listen with httpServer.listen
 httpServer.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
+  console.log(`Redis connection status: ${redisClient.isOpen ? 'Connected' : 'Disconnected'}`);
 });

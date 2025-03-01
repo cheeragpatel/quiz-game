@@ -13,10 +13,8 @@ const PlayerView = () => {
   const [finalScores, setFinalScores] = useState({});
 
   useEffect(() => {
-    // Initialize socket connection
     const socket = io();
 
-    // Define event handlers inside useEffect
     const handleGameStarted = (data) => {
       setCurrentQuestion(data.currentQuestion);
       setHasAnswered(false);
@@ -31,7 +29,6 @@ const PlayerView = () => {
     };
 
     const handleScoreUpdate = (data) => {
-      console.log("Score update received:", data);
       if (data.playerName === playerName) {
         setScore(data.score);
         if (data.correct) {
@@ -42,12 +39,24 @@ const PlayerView = () => {
       }
     };
 
-    // Get stored player name or prompt for new one
+    const handleGameOver = (data) => {
+      setGameOver(true);
+      setHostQuip(data.quip);
+      setFinalScores(data.finalScores);
+    };
+
+    const handleReconnectState = (state) => {
+      setCurrentQuestion(state.currentQuestion);
+      setScore(state.playerScores[playerName] || 0);
+      setHasAnswered(!!state.playerAnswers[playerName]);
+      setGameOver(!state.gameStarted);
+    };
+
     const storedPlayer = sessionStorage.getItem('playerName');
     if (storedPlayer) {
       setPlayerName(storedPlayer);
     } else {
-      const name = prompt("Enter your GitHub Handle:");
+      const name = prompt('Enter your GitHub Handle:');
       if (name) {
         setPlayerName(name);
         sessionStorage.setItem('playerName', name);
@@ -55,30 +64,28 @@ const PlayerView = () => {
       }
     }
 
-    // Attach event listeners
     socket.on('gameStarted', handleGameStarted);
     socket.on('newQuestion', handleNewQuestion);
     socket.on('scoreUpdate', handleScoreUpdate);
+    socket.on('gameOver', handleGameOver);
+    socket.on('reconnectState', handleReconnectState);
 
-    // Cleanup function
     return () => {
       socket.off('gameStarted', handleGameStarted);
       socket.off('newQuestion', handleNewQuestion);
       socket.off('scoreUpdate', handleScoreUpdate);
+      socket.off('gameOver', handleGameOver);
+      socket.off('reconnectState', handleReconnectState);
       socket.disconnect();
     };
-  }, [playerName]); // Add playerName as dependency
+  }, [playerName]);
 
-  // Handle answer submission
   const submitAnswer = async () => {
     if (hasAnswered || !selectedAnswer) {
-      console.log('Invalid submission attempt:', { hasAnswered, selectedAnswer });
       return;
     }
 
     try {
-      console.log('Submitting answer:', { playerName, selectedAnswer }); // Debug log
-
       const response = await axios.post('/api/submitAnswer', {
         playerName,
         answer: selectedAnswer
@@ -86,15 +93,11 @@ const PlayerView = () => {
 
       if (response.data.success) {
         setHasAnswered(true);
-        // Keep button disabled until next question
       } else {
-        console.error('Server returned unsuccessful response:', response.data);
         alert('Failed to submit answer. Please try again.');
       }
     } catch (error) {
-      console.error('Error submitting answer:', error);
       alert('Failed to submit answer. Please try again.');
-      // Reset state to allow retry
       setHasAnswered(false);
     }
   };
@@ -151,6 +154,6 @@ const PlayerView = () => {
       </button>
     </div>
   );
-}
+};
 
 export default PlayerView;
