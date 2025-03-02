@@ -2,6 +2,32 @@
 
 A multiplayer quiz game with a retro 70's game show aesthetic, powered by GPT-4. Features dynamic question generation, real-time multiplayer support, and a virtual host (Mona Woolery) that provides witty commentary.
 
+## System Architecture
+
+```mermaid
+graph TB
+    subgraph Frontend
+        React[React App]
+        Socket[Socket.IO Client]
+        Router[React Router]
+    end
+    
+    subgraph Backend
+        Express[Express Server]
+        SocketIO[Socket.IO Server]
+        Redis[Redis]
+        GPT4[GPT-4 API]
+    end
+    
+    React --> Socket
+    Socket --> SocketIO
+    React --> Router
+    Express --> SocketIO
+    SocketIO --> Redis
+    Express --> GPT4
+    Express --> Redis
+```
+
 ## ✨ Features
 
 - 🤖 GPT-4 powered question generation across various topics
@@ -32,6 +58,7 @@ A multiplayer quiz game with a retro 70's game show aesthetic, powered by GPT-4.
 - [Component Documentation](frontend/COMPONENTS.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
 - [Deployment Guide](DEPLOYMENT.md)
+- [Architecture Documentation](ARCHITECTURE.md)
 
 ## 🚀 Quick Start
 
