@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
-import PlayerStatus from './components/PlayerStatus';
-import ResponseStatus from './components/ResponseStatus';
+import PlayerStatus from './components/PlayerStatus.js';
+import ResponseStatus from './components/ResponseStatus.js';
+import { getErrorMessage, showErrorToast } from './utils/errorHandler.js';
 
 const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   const [numQuestions, setNumQuestions] = useState(10);
@@ -13,122 +14,95 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   const [hostQuip, setHostQuip] = useState('');
   const [gameOver, setGameOver] = useState(false);
   const [finalScores, setFinalScores] = useState({});
-  // eslint-disable-next-line no-unused-vars
-  const [playerResponses, setPlayerResponses] = useState({});
   const [responseStatus, setResponseStatus] = useState({});
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const socket = io();
+  const socket = useMemo(() => io(), []);
 
-  // Fetch players when component mounts
   useEffect(() => {
-    const fetchPlayers = async () => {
+    return () => {
+      socket.disconnect();
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchInitialData = async () => {
       try {
-        const response = await axios.get('/api/players');
-        setPlayers(response.data);
+        const playersResponse = await axios.get('/api/players');
+        if (mounted) {
+          setPlayers(playersResponse.data?.players || []);
+          setError(null);
+        }
       } catch (error) {
-        console.error('Error fetching players:', error);
+        if (mounted) {
+          setError(getErrorMessage(error));
+          showErrorToast('Failed to load data');
+        }
       }
     };
-    fetchPlayers();
+
+    fetchInitialData();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  // Add socket listener for new player registrations
   useEffect(() => {
-    socket.on('playerRegistered', (updatedPlayers) => {
-      setPlayers(updatedPlayers);
-    });
-    return () => socket.off('playerRegistered');
-  }, []);
-
-  // Add socket listener for round completion
-  useEffect(() => {
-    socket.on('roundComplete', (data) => {
+    const handleRoundComplete = (data) => {
       setWinner(data.winner);
       setHostQuip(data.quip);
       setScores(data.scores);
-    });
-    return () => socket.off('roundComplete');
-  }, []);
+    };
 
-  // Add socket listener for game over
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    socket.on('gameOver', (data) => {
+    const handleGameOver = (data) => {
       setGameOver(true);
       setWinner(data.winner);
       setHostQuip(data.quip);
       setFinalScores(data.finalScores);
       setGameStatus('ended');
-    });
-    return () => socket.off('gameOver');
-  }, [setGameStatus]);
+    };
 
-  // Add socket listener for game started
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    socket.on('gameStarted', (data) => {
-      console.log('Game started event received:', data);
-      setGameStatus('started');
-      setCurrentQuestion(data.currentQuestion);
-    });
-    return () => socket.off('gameStarted');
-  }, [setCurrentQuestion, setGameStatus]);
+    const handlePlayerRegistered = (updatedPlayers) => {
+      setPlayers(updatedPlayers || []);
+    };
 
-  // Add socket listener for responses
-  useEffect(() => {
-    socket.on('playerAnswered', ({ playerName }) => {
-      setPlayerResponses(prev => ({
+    const handlePlayerAnswered = ({ playerName }) => {
+      setResponseStatus(prev => ({
         ...prev,
         [playerName]: true
       }));
-    });
-
-    socket.on('newQuestion', () => {
-      setPlayerResponses({}); // Reset responses
-    });
-    return () => {
-      socket.off('playerAnswered');
-      socket.off('newQuestion');
     };
-  }, []);
 
-  // Add socket listener specifically for player answers
-  useEffect(() => {
-    socket.on('playerAnswered', (data) => {
-      console.log('Player answered:', data); // Debug log
-      setResponseStatus(prev => ({
-        ...prev,
-        [data.playerName]: true
-      }));
-    });
-
-    // Reset responses when new question starts
-    socket.on('newQuestion', () => {
-      console.log('New question - resetting responses'); // Debug log
+    const handleNewQuestion = () => {
       setResponseStatus({});
-    });
+      setWinner(null);
+      setHostQuip('');
+    };
+
+    socket.on('roundComplete', handleRoundComplete);
+    socket.on('gameOver', handleGameOver);
+    socket.on('playerRegistered', handlePlayerRegistered);
+    socket.on('playerAnswered', handlePlayerAnswered);
+    socket.on('newQuestion', handleNewQuestion);
 
     return () => {
-      socket.off('playerAnswered');
-      socket.off('newQuestion');
+      socket.off('roundComplete', handleRoundComplete);
+      socket.off('gameOver', handleGameOver);
+      socket.off('playerRegistered', handlePlayerRegistered);
+      socket.off('playerAnswered', handlePlayerAnswered);
+      socket.off('newQuestion', handleNewQuestion);
     };
-  }, []);
-
-  // Add socket listener for reconnection
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    socket.on('reconnectStateRequest', (state) => {
-      setGameStatus(state.gameStarted ? 'started' : 'not started');
-      setCurrentQuestion(state.currentQuestion);
-      setPlayers(state.registeredPlayers);
-      setScores(state.playerScores);
-      setResponseStatus(state.playerAnswers);
-    });
-    return () => socket.off('reconnectStateRequest');
-  }, [setCurrentQuestion, setGameStatus]);
+  }, [setGameStatus, socket]);
 
   const handleNumQuestionsChange = (e) => {
-    setNumQuestions(e.target.value);
+    const value = parseInt(e.target.value, 10);
+    if (value > 0 && value <= 50) {
+      setNumQuestions(value);
+    }
   };
 
   const handleTopicsChange = (e) => {
@@ -136,63 +110,192 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   };
 
   const startGame = async () => {
+    if (!topics.trim()) {
+      showErrorToast('Please enter at least one topic');
+      return;
+    }
+
+    setIsLoading(true);
     try {
+      const topicsArray = topics.split(',').filter(topic => topic.trim()).map(topic => topic.trim());
+      if (topicsArray.length === 0) {
+        throw new Error('Please enter at least one valid topic');
+      }
+
       const response = await axios.post('/api/startGame', {
         numQuestions,
-        topics: topics.split(',').map((topic) => topic.trim()),
+        topics: topicsArray,
       });
       setGameStatus('started');
       setCurrentQuestion(response.data.currentQuestion);
+      setError(null);
     } catch (error) {
       console.error('Error starting game:', error);
+      showErrorToast(getErrorMessage(error));
+      setError('Failed to start game');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const endGame = async () => {
+    setIsLoading(true);
     try {
       await axios.post('/api/endGame');
       setGameStatus('ended');
+      setError(null);
     } catch (error) {
       console.error('Error ending game:', error);
+      showErrorToast(getErrorMessage(error));
+      setError('Failed to end game');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const nextQuestion = async () => {
+    setIsLoading(true);
     try {
       const response = await axios.post('/api/nextQuestion');
       setCurrentQuestion(response.data);
-      setWinner(null); // Reset winner for new round
-      setHostQuip(''); // Reset quip for new round
+      setWinner(null);
+      setHostQuip('');
+      setError(null);
     } catch (error) {
       console.error('Error fetching next question:', error);
+      showErrorToast(getErrorMessage(error));
+      setError('Failed to get next question');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // New function to reset game state and prepare for a new game
   const newGame = () => {
-    // Reset all game state
     setGameOver(false);
     setWinner(null);
     setHostQuip('');
     setScores({});
     setFinalScores({});
     setResponseStatus({});
-    setPlayerResponses({});
     setGameStatus('not started');
+    setError(null);
   };
+
+  const resetGame = async () => {
+    setIsLoading(true);
+    try {
+      await axios.post('/api/resetGame');
+      newGame();
+    } catch (error) {
+      console.error('Error resetting game:', error);
+      showErrorToast(getErrorMessage(error));
+      setError('Failed to reset game');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const renderPlayersList = () => {
+    if (!Array.isArray(players) || players.length === 0) {
+      return <p>No players registered yet</p>;
+    }
+
+    return (
+      <ul className="game-show-choices">
+        {players.map((player) => (
+          <li key={player.githubHandle || player.id || Math.random().toString()}>
+            {player.githubHandle}: {scores[player.githubHandle] || 0} points
+          </li>
+        ))}
+      </ul>
+    );
+  };
+
+  const renderFinalScores = () => {
+    const scoreEntries = Object.entries(finalScores || {});
+    if (scoreEntries.length === 0) {
+      return <p>No scores available</p>;
+    }
+
+    return (
+      <ul className="game-show-choices">
+        {scoreEntries
+          .sort(([,a], [,b]) => b - a)
+          .map(([player, score]) => (
+            <li key={player}>{player}: {score} points</li>
+          ))}
+      </ul>
+    );
+  };
+
+  if (error) {
+    return (
+      <div className="error-container">
+        <h2>Error</h2>
+        <p>{error}</p>
+        <button onClick={() => window.location.reload()}>Retry</button>
+      </div>
+    );
+  }
 
   if (gameStatus === 'started') {
     return (
       <div>
         <h2>Game in Progress</h2>
-        {/* Display current question or other game details */}
-        <ResponseStatus players={players} responseStatus={responseStatus} />
-        <PlayerStatus players={players} responseStatus={responseStatus} />
+        <ResponseStatus players={players || []} responseStatus={responseStatus || {}} />
+        <PlayerStatus players={players || []} responseStatus={responseStatus || {}} />
 
-        {/* Game control buttons during active game */}
+        {isLoading && (
+          <div className="loading-overlay">
+            <div className="loading-spinner" />
+          </div>
+        )}
+
         <div className="game-controls">
-          <button className="game-show-button" onClick={nextQuestion}>Next Question</button>
-          <button className="game-show-button" onClick={endGame}>End Game</button>
+          <button 
+            className="game-show-button" 
+            onClick={nextQuestion}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Loading...' : 'Next Question'}
+          </button>
+          <button 
+            className="game-show-button" 
+            onClick={endGame}
+            disabled={isLoading}
+          >
+            {isLoading ? 'Ending...' : 'End Game'}
+          </button>
+        </div>
+
+        {winner && !gameOver && (
+          <div className="game-show-winner">
+            <h3>Round Winner: {winner}</h3>
+            <p>{hostQuip}</p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (gameOver) {
+    return (
+      <div className="game-show-container">
+        <div className="game-show-winner">
+          <h2>Game Over!</h2>
+          <h3>Final Winner: {winner}</h3>
+          <p>{hostQuip}</p>
+          <div className="final-scores">
+            <h4>Final Scores:</h4>
+            {renderFinalScores()}
+          </div>
+          <button 
+            className="game-show-button new-game-button" 
+            onClick={newGame}
+            disabled={isLoading}
+          >
+            Start New Game
+          </button>
         </div>
       </div>
     );
@@ -202,79 +305,57 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
     <div>
       <h1>Game Master View</h1>
       
-      {gameOver ? (
-        <div className="game-show-container">
-          <div className="game-show-winner">
-            <h2>Game Over!</h2>
-            <h3>Final Winner: {winner}</h3>
-            <p>{hostQuip}</p>
-            <div className="final-scores">
-              <h4>Final Scores:</h4>
-              <ul className="game-show-choices">
-                {Object.entries(finalScores)
-                  .sort(([,a], [,b]) => b - a)
-                  .map(([player, score]) => (
-                    <li key={player}>{player}: {score} points</li>
-                  ))}
-              </ul>
-            </div>
-            {/* New Game button */}
-            <button className="game-show-button new-game-button" onClick={newGame}>Start New Game</button>
-          </div>
+      {isLoading ? (
+        <div className="loading-container">
+          <div className="loading-spinner" />
         </div>
       ) : (
         <>
-          {/* Existing player list and scores */}
           <div className="game-show-container">
             <h2>Players and Scores</h2>
-            {players.length === 0 ? (
-              <p>No players registered yet</p>
-            ) : (
-              <ul className="game-show-choices">
-                {players.map((player) => (
-                  <li key={player.githubHandle}>
-                    {player.githubHandle}: {scores[player.githubHandle] || 0} points
-                  </li>
-                ))}
-              </ul>
-            )}
+            {renderPlayersList()}
           </div>
 
-          {/* Winner and quip display for rounds */}
-          {winner && !gameOver && (
-            <div className="game-show-winner">
-              <h3>Round Winner: {winner}</h3>
-              <p>{hostQuip}</p>
+          <div className="game-controls">
+            <div className="control-group">
+              <label>
+                Number of Questions:
+                <input
+                  type="number"
+                  value={numQuestions}
+                  onChange={handleNumQuestionsChange}
+                  min="1"
+                  max="50"
+                  className="game-input"
+                />
+              </label>
             </div>
-          )}
-
-          {/* Game controls */}
-          <div>
-            <label>
-              Number of Questions:
-              <input
-                type="number"
-                value={numQuestions}
-                onChange={handleNumQuestionsChange}
-                min="1"
-              />
-            </label>
-          </div>
-          <div>
-            <label>
-              Topics (comma separated):
-              <input
-                type="text"
-                value={topics}
-                onChange={handleTopicsChange}
-                placeholder="e.g., science, history"
-              />
-            </label>
-          </div>
-          <div>
-            <button className="game-show-button" onClick={startGame}>Start Game</button>
-            <button className="game-show-button" onClick={endGame}>End Game</button>
-            <button className="game-show-button" onClick={nextQuestion}>Next Question</button>
+            <div className="control-group">
+              <label>
+                Topics (comma separated):
+                <input
+                  type="text"
+                  value={topics}
+                  onChange={handleTopicsChange}
+                  placeholder="e.g., science, history"
+                  className="game-input"
+                />
+              </label>
+            </div>
+            <button 
+              className="game-show-button"
+              onClick={startGame}
+              disabled={isLoading || !topics.trim()}
+            >
+              {isLoading ? 'Starting...' : 'Start Game'}
+            </button>
+            <button
+              className="game-show-button reset-button"
+              onClick={resetGame}
+              disabled={isLoading}
+            >
+              Reset Game
+            </button>
           </div>
         </>
       )}

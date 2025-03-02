@@ -1,7 +1,60 @@
 version: '3.8'
 
+# Enable BuildKit by default
+x-build-args: &build-args
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
 services:
+  app:
+    build: 
+      context: .
+      target: production
+      args:
+        <<: *build-args
+    ports:
+      - "3002:3001"
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - redis
+    # Removed volumes mapping for node_modules to allow production dependencies
+    command: npm start
+
   redis:
-    image: redis:latest
+    image: redis:alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+
+  # dev:
+  #   build: 
+  #     context: .
+  #     target: builder
+  #     args:
+  #       <<: *build-args
+  #   ports:
+  #     - "3001:3001"
+  #     - "3000:3000"
+  #   environment:
+  #     - NODE_ENV=development
+  #     - REDIS_URL=redis://redis:6379
+  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
+  #     - WATCHPACK_POLLING=true
+  #   depends_on:
+  #     - redis
+  #   volumes:
+  #     - .:/usr/src/app:cached
+  #     - /usr/src/app/node_modules
+  #     - /usr/src/app/frontend/node_modules
+  #   command: npm run dev
+
+volumes:
+  redis_data:
+  node_modules:
+  frontend_node_modules:
+  build:

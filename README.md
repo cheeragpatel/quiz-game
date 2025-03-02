@@ -1,126 +1,174 @@
-# quiz-game
+# Quiz Game 🎮
 
-## Overview
+A multiplayer quiz game with a retro 70's game show aesthetic, powered by GPT-4. Features dynamic question generation, real-time multiplayer support, and a virtual host (Mona Woolery) that provides witty commentary.
 
-This is a multiplayer quiz game webapp that dynamically generates questions using GPT-4. Players register using their GitHub handles and avatars. The game features a retro 70's game show aesthetic with a virtual host (Mona Woolery) powered by GPT-4.
+## System Architecture
 
-## Features
+```mermaid
+graph TB
+    subgraph Frontend
+        React[React App]
+        Socket[Socket.IO Client]
+        Router[React Router]
+    end
+    
+    subgraph Backend
+        Express[Express Server]
+        SocketIO[Socket.IO Server]
+        Redis[Redis]
+        GPT4[GPT-4 API]
+    end
+    
+    React --> Socket
+    Socket --> SocketIO
+    React --> Router
+    Express --> SocketIO
+    SocketIO --> Redis
+    Express --> GPT4
+    Express --> Redis
+```
 
-- Dynamic question generation using GPT-4
-- Player registration with GitHub handles and avatars
-- Real-time multiplayer support using Socket.IO
-- Retro 70's game show themed interface
-- Virtual host (Mona Woolery) with witty commentary
-- Score tracking and leaderboard
-- Configurable number of questions and topics
+## ✨ Features
 
-## Views
+- 🤖 GPT-4 powered question generation across various topics
+- 🎮 Real-time multiplayer gameplay using Socket.IO
+- 🎭 GitHub-based player registration with avatar integration
+- 🎙️ Virtual host (Mona Woolery) providing dynamic commentary
+- 📊 Live score tracking and leaderboard
+- 🎯 Configurable game settings (number of questions, topics)
+- 💾 Persistent game state with Redis
+- 🏆 Round-by-round winner celebrations
+- 🎪 Multiple game instances support
+- 🔄 Automatic reconnection handling
 
-### Player View ([frontend/src/PlayerView.js](frontend/src/PlayerView.js))
-- Player registration with GitHub integration
-- Real-time question display
-- Answer submission
-- Score tracking
-- Round winner announcements
+## 🛠️ Tech Stack
 
-### Game Show View ([frontend/src/GameShowView.js](frontend/src/GameShowView.js))
-- Current question display
-- Player avatars
-- Host quips and commentary
-- Winner announcements
-- Final leaderboard
+- **Frontend**: React, Socket.IO Client, React Router
+- **Backend**: Express.js, Socket.IO, Redis
+- **AI Integration**: OpenAI GPT-4 API
+- **Authentication**: GitHub API
+- **State Management**: Redis
+- **Build Tools**: Node.js, npm
+- **Testing**: Jest, Testing Library
+- **Deployment**: Docker, Docker Compose
 
-### Game Master View ([frontend/src/GameMasterView.js](frontend/src/GameMasterView.js))
-- Game configuration (number of questions, topics)
-- Game flow controls (start/end game, next question)
-- Player list and score tracking
-- Round monitoring
+## 📚 Documentation
 
-## Installation
+- [API Documentation](backend/API.md)
+- [Component Documentation](frontend/COMPONENTS.md)
+- [Contributing Guidelines](CONTRIBUTING.md)
+- [Deployment Guide](DEPLOYMENT.md)
+- [Architecture Documentation](ARCHITECTURE.md)
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Node.js 16+
+- Redis server
+- OpenAI API key
+- GitHub API access
+
+### Installation
 
 1. Clone the repository:
-   ```
+   ```bash
    git clone https://github.com/cheeragpatel/quiz-game.git
-   ```
-2. Navigate to the project directory:
-   ```
    cd quiz-game
    ```
-3. Install the dependencies:
+
+2. Run the setup script:
+   ```bash
+   npm run setup
    ```
-   npm install
+
+3. Configure environment:
+   ```bash
+   # Update .env with your keys
+   OPENAI_API_KEY=your_key_here
+   GITHUB_CLIENT_ID=your_client_id
+   GITHUB_CLIENT_SECRET=your_client_secret
+   REDIS_URL=redis://localhost:6379
    ```
 
-## Usage
-
-### Player Registration
-
-1. Open the webapp in your browser.
-2. Navigate to the registration page.
-3. Enter your GitHub handle and submit the form.
-4. Your GitHub avatar will be displayed as your profile picture.
-
-### Game Master View
-
-1. Open the webapp in your browser.
-2. Navigate to the game master view.
-3. Use the controls to start/end the game and move to the next question.
-4. Configure the number of questions using the provided user interface element (text box or dropdown menu).
-
-### Game Show View
-
-1. Open the webapp in your browser.
-2. Navigate to the game show view.
-3. The current question and a progress bar for responses will be displayed.
-4. Once everyone has responded, the winner will be shown with a game show host styled quip.
-5. The game will then move to the next question.
-6. At the end, the scores will be tallied, and the winner will be displayed.
-
-## Implementation
-
-### Backend
-
-- `backend/questionGenerator.js`: Interacts with GPT-4 for question generation and fetches questions based on nerdy/geeky pop culture references.
-- `backend/virtualHost.js`: Implements a virtual host function using GPT-4 for dynamic hosting.
-
-### Frontend
-
-- `frontend/registrationForm.js`: Implements a registration form that accepts GitHub handles and fetches/displays GitHub avatars as profile pictures.
-- `frontend/gameShowView.js`: Implements a game show view with dynamic question display, progress bar, and winner display with a quip using GPT-4.
-- `frontend/gameMasterView.js`: Adds controls for the game master to start/end the game, move to the next question, and set the number of questions.
-
-## Running in a GitHub Codespace
-
-1. Open the repository in a GitHub Codespace.
-2. Follow the installation steps to set up the project.
-3. Start the development server:
+4. Start development servers:
+   ```bash
+   npm run dev
    ```
-   npm start
+
+### Docker Setup
+
+1. Build and start containers:
+   ```bash
+   docker-compose up --build
    ```
-4. Open the webapp in the Codespace browser.
 
-## Access Instructions
+2. Access the application:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:3001
 
-### Users
-
-1. Open the webapp in your browser.
-2. Navigate to the registration page.
-3. Enter your GitHub handle and submit the form.
-4. Your GitHub avatar will be displayed as your profile picture.
+## 🎮 Game Roles
 
 ### Game Master
+- Access at `/game-master`
+- Configure game settings
+- Control game flow
+- Monitor player progress
 
-1. Open the webapp in your browser.
-2. Navigate to the game master view.
-3. Use the controls to start/end the game and move to the next question.
-4. Configure the number of questions using the provided user interface element (text box or dropdown menu).
+### Players
+- Register at root URL
+- Join using GitHub handle
+- Answer questions
+- View scores and rankings
 
-## Starting the Combined Server
+### Spectators
+- View at `/game-show`
+- Watch live gameplay
+- See leaderboard
+- Enjoy host commentary
 
-1. Ensure you have installed all dependencies by running `npm install` in the root directory.
-2. Start the combined server using the following command:
-   ```
-   npm start
-   ```
-3. The frontend and backend servers will run simultaneously.
+## 🎨 Customization
+
+### Game Settings
+- Question count (5-50)
+- Topic selection
+- Time limits
+- Scoring rules
+
+### Display Options
+- Theme customization
+- Font preferences
+- Animation settings
+- Layout options
+
+## 🧪 Testing
+
+Run the test suite:
+```bash
+# All tests
+npm test
+
+# Backend tests
+npm run backend:test
+
+# Frontend tests
+npm run frontend:test
+```
+
+## 📦 Production Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions on:
+- Server setup
+- SSL configuration
+- Environment variables
+- Monitoring
+- Backup procedures
+
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## 📄 License
+
+This project is licensed under the ISC License.
 
