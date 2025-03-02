@@ -1,8 +1,8 @@
-# Quiz Game
+# Quiz Game 🎮
 
 A multiplayer quiz game with a retro 70's game show aesthetic, powered by GPT-4. Features dynamic question generation, real-time multiplayer support, and a virtual host (Mona Woolery) that provides witty commentary.
 
-## Features
+## ✨ Features
 
 - 🤖 GPT-4 powered question generation across various topics
 - 🎮 Real-time multiplayer gameplay using Socket.IO
@@ -12,23 +12,28 @@ A multiplayer quiz game with a retro 70's game show aesthetic, powered by GPT-4.
 - 🎯 Configurable game settings (number of questions, topics)
 - 💾 Persistent game state with Redis
 - 🏆 Round-by-round winner celebrations
+- 🎪 Multiple game instances support
+- 🔄 Automatic reconnection handling
 
-## Tech Stack
+## 🛠️ Tech Stack
 
-- **Frontend**: React, Socket.IO Client
-- **Backend**: Express.js, Socket.IO
+- **Frontend**: React, Socket.IO Client, React Router
+- **Backend**: Express.js, Socket.IO, Redis
+- **AI Integration**: OpenAI GPT-4 API
+- **Authentication**: GitHub API
 - **State Management**: Redis
-- **AI Integration**: OpenAI GPT-4
-- **Authentication**: GitHub API integration
-- **Deployment**: Docker support
+- **Build Tools**: Node.js, npm
+- **Testing**: Jest, Testing Library
+- **Deployment**: Docker, Docker Compose
 
-## Documentation
+## 📚 Documentation
 
 - [API Documentation](backend/API.md)
 - [Component Documentation](frontend/COMPONENTS.md)
-- [Frontend README](frontend/README.md)
+- [Contributing Guidelines](CONTRIBUTING.md)
+- [Deployment Guide](DEPLOYMENT.md)
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
@@ -45,100 +50,98 @@ A multiplayer quiz game with a retro 70's game show aesthetic, powered by GPT-4.
    cd quiz-game
    ```
 
-2. Install dependencies:
+2. Run the setup script:
    ```bash
-   npm install
-   cd frontend && npm install
+   npm run setup
    ```
 
-3. Set up environment variables:
+3. Configure environment:
    ```bash
-   # Create .env file
-   cp .env.example .env
-   # Add your OpenAI API key
+   # Update .env with your keys
+   OPENAI_API_KEY=your_key_here
+   GITHUB_CLIENT_ID=your_client_id
+   GITHUB_CLIENT_SECRET=your_client_secret
+   REDIS_URL=redis://localhost:6379
    ```
 
-4. Start Redis server:
+4. Start development servers:
    ```bash
-   redis-server
+   npm run dev
    ```
 
-5. Start the development servers:
-   ```bash
-   npm start
-   ```
+### Docker Setup
 
-### Docker Deployment
-
-1. Build and run using Docker Compose:
+1. Build and start containers:
    ```bash
    docker-compose up --build
    ```
 
-## Game Setup
+2. Access the application:
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:3001
 
-### As a Game Master:
+## 🎮 Game Roles
 
-1. Navigate to /game-master
-2. Configure game settings:
-   - Number of questions
-   - Topics (comma-separated)
-3. Use control panel to:
-   - Start/end game
-   - Advance to next question
-   - Monitor player responses
+### Game Master
+- Access at `/game-master`
+- Configure game settings
+- Control game flow
+- Monitor player progress
 
-### As a Player:
+### Players
+- Register at root URL
+- Join using GitHub handle
+- Answer questions
+- View scores and rankings
 
-1. Navigate to root URL
-2. Enter GitHub handle
-3. Wait for game master to start
-4. Answer questions when prompted
-5. View scores and celebrations
+### Spectators
+- View at `/game-show`
+- Watch live gameplay
+- See leaderboard
+- Enjoy host commentary
 
-### Game Show Display:
+## 🎨 Customization
 
-1. Navigate to /game-show
-2. Display automatically shows:
-   - Current question
-   - Player avatars
-   - Scores
-   - Host commentary
+### Game Settings
+- Question count (5-50)
+- Topic selection
+- Time limits
+- Scoring rules
 
-## Architecture
+### Display Options
+- Theme customization
+- Font preferences
+- Animation settings
+- Layout options
 
-### Backend Services
+## 🧪 Testing
 
-- Question Generation Service (GPT-4)
-- Virtual Host Service (GPT-4)
-- Game State Management
-- Real-time Communication
-- Player Authentication
+Run the test suite:
+```bash
+# All tests
+npm test
 
-### Frontend Components
+# Backend tests
+npm run backend:test
 
-- Game Master Interface
-- Player Interface
-- Game Show Display
-- Registration System
-- Real-time Updates
+# Frontend tests
+npm run frontend:test
+```
 
-## Contributing
+## 📦 Production Deployment
 
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a Pull Request
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions on:
+- Server setup
+- SSL configuration
+- Environment variables
+- Monitoring
+- Backup procedures
 
-## License
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## 📄 License
 
 This project is licensed under the ISC License.
-
-## Acknowledgments
-
-- OpenAI for GPT-4 API
-- GitHub for authentication API
-- Socket.IO for real-time capabilities
-- Redis for state management
 
