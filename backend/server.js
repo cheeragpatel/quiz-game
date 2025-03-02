@@ -14,6 +14,7 @@ import GameState from './models/GameState.js';
 import setupRoutes from './routes/index.js';
 import { setupSocketHandlers } from './socket/socketHandlers.js';
 import { manageGameInstances } from './utils/gameUtils.js';
+import rateLimit from 'express-rate-limit';
 
 // Set up __dirname equivalent for ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -26,6 +27,15 @@ const io = new Server(httpServer);
 
 // Parse JSON request bodies
 app.use(express.json());
+
+// Apply rate limiting to all requests
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+app.use(limiter);
 
 // Serve static files from the correct public directory
 // First, try the Docker container path
