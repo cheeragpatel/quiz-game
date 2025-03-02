@@ -27,8 +27,8 @@ const RegistrationForm = () => {
     try {
       validateGithubHandle(githubHandle);
 
-      const response = await axios.post('/api/register', { githubHandle });
-      
+      const response = await axios.post('/api/registerPlayer', { githubHandle });
+
       if (response.data.success) {
         sessionStorage.setItem('playerName', githubHandle);
         navigate('/player');
@@ -70,8 +70,8 @@ const RegistrationForm = () => {
         </div>
         <button 
           type="submit" 
-          className="game-show-button"
           disabled={isLoading || !githubHandle.trim()}
+          className="game-show-button"
         >
           {isLoading ? 'Registering...' : 'Register'}
         </button>

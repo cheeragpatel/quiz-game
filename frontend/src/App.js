@@ -24,9 +24,8 @@ function App() {
       setCurrentQuestion(question);
     };
 
-    const handleGameOver = (data) => {
+    const handleGameOver = () => {
       setGameStatus('ended');
-      // Handle game over state
     };
 
     const handleReconnectState = (state) => {
@@ -34,34 +33,26 @@ function App() {
       setCurrentQuestion(state.currentQuestion);
     };
 
+    const handleGameReset = () => {
+      setGameStatus('not started');
+      setCurrentQuestion(null);
+    };
+
     socket.on('gameStarted', handleGameStarted);
     socket.on('newQuestion', handleNewQuestion);
     socket.on('gameOver', handleGameOver);
+    socket.on('gameReset', handleGameReset);
     socket.on('reconnectState', handleReconnectState);
 
     return () => {
       socket.off('gameStarted', handleGameStarted);
       socket.off('newQuestion', handleNewQuestion);
       socket.off('gameOver', handleGameOver);
+      socket.off('gameReset', handleGameReset);
       socket.off('reconnectState', handleReconnectState);
-      socket.close();
+      socket.disconnect();
     };
   }, []);
-
-  useEffect(() => {
-    const fetchCurrentQuestion = async () => {
-      try {
-        const response = await axios.get('/api/currentQuestion');
-        setCurrentQuestion(response.data);
-      } catch (error) {
-        console.error('Error fetching current question:', error);
-      }
-    };
-
-    if (gameStatus === 'started') {
-      fetchCurrentQuestion();
-    }
-  }, [gameStatus]);
 
   return (
     <ErrorBoundary>
@@ -74,13 +65,17 @@ function App() {
               <GameMasterView 
                 setCurrentQuestion={setCurrentQuestion} 
                 setGameStatus={setGameStatus} 
+                gameStatus={gameStatus}
               />
             } 
           />
           <Route 
             path="/game-show" 
             element={
-              <GameShowView />
+              <GameShowView 
+                currentQuestion={currentQuestion}
+                gameStatus={gameStatus}
+              />
             } 
           />
           <Route 
@@ -88,6 +83,7 @@ function App() {
             element={
               <PlayerView 
                 currentQuestion={currentQuestion} 
+                gameStatus={gameStatus}
               />
             } 
           />

@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
 import PlayerStatus from './components/PlayerStatus.js';
 import ResponseStatus from './components/ResponseStatus.js';
 import { getErrorMessage, showErrorToast } from './utils/errorHandler.js';
 
-const GameShowView = () => {
+const GameShowView = ({ currentQuestion: propQuestion, gameStatus }) => {
   const [winners, setWinners] = useState([]);
   const [hostQuip, setHostQuip] = useState('');
   const [avatarUrls, setAvatarUrls] = useState({});
@@ -14,7 +14,7 @@ const GameShowView = () => {
   const [gameOver, setGameOver] = useState(false);
   const [finalScores, setFinalScores] = useState({});
   const [registeredPlayers, setRegisteredPlayers] = useState([]);
-  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [currentQuestion, setCurrentQuestion] = useState(propQuestion);
   const [finalWinners, setFinalWinners] = useState([]);
   const [goodbyeQuip, setGoodbyeQuip] = useState('');
   const [introQuip, setIntroQuip] = useState('');
@@ -22,9 +22,26 @@ const GameShowView = () => {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Create a ref to store the socket connection
+  const socketRef = useRef(null);
+
   useEffect(() => {
-    const socket = io();
+    const socket = io('/', {
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000
+    });
+    
+    // Store socket in ref so it can be accessed outside this effect
+    socketRef.current = socket;
+
     let mounted = true;
+
+    socket.on('connect', () => {
+      console.log('GameShow view connected to server');
+    });
 
     socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
@@ -36,38 +53,14 @@ const GameShowView = () => {
       showErrorToast(getErrorMessage(error));
     });
 
-    const fetchInitialData = async () => {
-      try {
-        const [playersResponse, welcomeResponse] = await Promise.all([
-          axios.get('/api/players'),
-          axios.get('/api/welcomeQuip')
-        ]);
-
-        if (mounted) {
-          setRegisteredPlayers(playersResponse.data);
-          setWelcomeQuip(welcomeResponse.data.quip);
-          setError(null);
-        }
-      } catch (error) {
-        console.error('Error fetching initial data:', error);
-        if (mounted) {
-          setError(getErrorMessage(error));
-        }
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    fetchInitialData();
-
     const handleGameStarted = (data) => {
       if (!mounted) return;
       setGameStarted(true);
+      setGameOver(false);
       setCurrentQuestion(data.currentQuestion);
       setIntroQuip(data.introQuip);
       setWelcomeQuip(data.welcomeQuip);
+      setResponseStatus({});
       setError(null);
     };
 
@@ -76,7 +69,6 @@ const GameShowView = () => {
       setCurrentQuestion(question);
       setWinners([]);
       setHostQuip('');
-      setAvatarUrls({});
       setResponseStatus({});
     };
 
@@ -84,38 +76,15 @@ const GameShowView = () => {
       if (!mounted) return;
       
       try {
-        if (!data.winners || data.winners.length === 0) {
+        if (!data.winner) {
           setWinners([]);
           setHostQuip(`${data.quip}\nThe correct answer was: ${data.correctAnswer}`);
-          setAvatarUrls({});
         } else {
-          const winnersList = Array.isArray(data.winners) ? data.winners : [data.winners];
-          setWinners(winnersList);
-          setHostQuip(data.quip || 'And the winner is...');
-
-          // Fetch avatars
-          const avatars = {};
-          await Promise.all(
-            winnersList.map(async (winner) => {
-              if (!winner) return;
-              try {
-                const response = await fetch(`https://api.github.com/users/${winner}`);
-                if (!response.ok) throw new Error('Avatar fetch failed');
-                const userData = await response.json();
-                avatars[winner] = userData.avatar_url;
-              } catch (error) {
-                console.error(`Error fetching avatar for ${winner}:`, error);
-                avatars[winner] = '/default-avatar.png';
-              }
-            })
-          );
-          if (mounted) {
-            setAvatarUrls(avatars);
-          }
+          setWinners(Array.isArray(data.winner) ? data.winner : [data.winner]);
+          setHostQuip(data.quip);
         }
       } catch (error) {
         console.error('Error handling round complete:', error);
-        showErrorToast(getErrorMessage(error));
       }
     };
 
@@ -123,7 +92,8 @@ const GameShowView = () => {
       if (!mounted) return;
       try {
         setGameOver(true);
-        setFinalWinners(data.winners);
+        setGameStarted(false);
+        setFinalWinners(Array.isArray(data.winners) ? data.winners : [data.winners]);
         setFinalScores(data.finalScores);
         setHostQuip(data.quip);
 
@@ -139,30 +109,90 @@ const GameShowView = () => {
       }
     };
 
+    const handlePlayerRegistered = (players) => {
+      if (!mounted) return;
+      setRegisteredPlayers(players);
+    };
+
+    const handlePlayerAnswered = (data) => {
+      if (!mounted) return;
+      setResponseStatus(prev => ({
+        ...prev,
+        [data.playerName]: true
+      }));
+    };
+
+    const handleReconnectState = (state) => {
+      if (!mounted) return;
+      setGameStarted(state.gameStarted);
+      setCurrentQuestion(state.currentQuestion);
+      setGameOver(!state.gameStarted && state.hasEnded);
+      setFinalScores(state.playerScores || {});
+      setRegisteredPlayers(state.registeredPlayers || []);
+    };
+
+    const fetchInitialData = async () => {
+      try {
+        const [playersResponse, welcomeResponse] = await Promise.all([
+          axios.get('/api/players'),
+          axios.get('/api/welcomeQuip')
+        ]);
+
+        if (mounted) {
+          setRegisteredPlayers(playersResponse.data.players);
+          setWelcomeQuip(welcomeResponse.data.quip);
+          setError(null);
+        }
+      } catch (error) {
+        console.error('Error fetching initial data:', error);
+        if (mounted) {
+          setError('Failed to load initial game data');
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchInitialData();
+
     socket.on('gameStarted', handleGameStarted);
     socket.on('newQuestion', handleNewQuestion);
     socket.on('roundComplete', handleRoundComplete);
     socket.on('gameOver', handleGameOver);
-    socket.on('playerRegistered', (players) => {
-      if (mounted) {
-        setRegisteredPlayers(players);
-      }
-    });
-
-    socket.on('playerAnswered', (data) => {
-      if (mounted) {
-        setResponseStatus(prev => ({
-          ...prev,
-          [data.playerName]: true
-        }));
-      }
-    });
+    socket.on('playerRegistered', handlePlayerRegistered);
+    socket.on('playerAnswered', handlePlayerAnswered);
+    socket.on('reconnectState', handleReconnectState);
 
     return () => {
       mounted = false;
+      socket.off('gameStarted', handleGameStarted);
+      socket.off('newQuestion', handleNewQuestion);
+      socket.off('roundComplete', handleRoundComplete);
+      socket.off('gameOver', handleGameOver);
+      socket.off('playerRegistered', handlePlayerRegistered);
+      socket.off('playerAnswered', handlePlayerAnswered);
+      socket.off('reconnectState', handleReconnectState);
       socket.disconnect();
+      socketRef.current = null;
     };
   }, []);
+
+  // Update from props
+  useEffect(() => {
+    setCurrentQuestion(propQuestion);
+  }, [propQuestion]);
+
+  useEffect(() => {
+    if (gameStatus === 'started') {
+      setGameStarted(true);
+      setGameOver(false);
+    } else if (gameStatus === 'ended') {
+      setGameOver(true);
+      setGameStarted(false);
+    }
+  }, [gameStatus]);
 
   if (error) {
     return (

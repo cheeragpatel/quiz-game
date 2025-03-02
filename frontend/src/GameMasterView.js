@@ -16,9 +16,7 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   const [finalScores, setFinalScores] = useState({});
   const [responseStatus, setResponseStatus] = useState({});
   const [error, setError] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [instanceId, setInstanceId] = useState(null);
-  const [activeInstances, setActiveInstances] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   const socket = useMemo(() => io(), []);
 
@@ -29,65 +27,29 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   }, [socket]);
 
   useEffect(() => {
-    socket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
-      showErrorToast('Connection error. Trying to reconnect...');
-    });
-
-    socket.on('error', (error) => {
-      console.error('Socket error:', error);
-      showErrorToast(getErrorMessage(error));
-    });
-
-    return () => {
-      socket.off('connect_error');
-      socket.off('error');
-    };
-  }, [socket]);
-
-  useEffect(() => {
     let mounted = true;
 
     const fetchInitialData = async () => {
       try {
-        const [playersResponse, instancesResponse] = await Promise.all([
-          axios.get('/api/players'),
-          axios.get('/api/gameInstances')
-        ]);
-        
+        const playersResponse = await axios.get('/api/players');
         if (mounted) {
           setPlayers(playersResponse.data?.players || []);
-          setActiveInstances(instancesResponse.data?.instances || []);
           setError(null);
         }
       } catch (error) {
-        console.error('Error fetching initial data:', error);
         if (mounted) {
           setError(getErrorMessage(error));
           showErrorToast('Failed to load data');
-        }
-      } finally {
-        if (mounted) {
-          setIsLoading(false);
         }
       }
     };
 
     fetchInitialData();
-    
-    const handleInstanceUpdate = (instances) => {
-      if (mounted) {
-        setActiveInstances(instances || []);
-      }
-    };
-
-    socket.on('gameInstancesUpdated', handleInstanceUpdate);
 
     return () => {
       mounted = false;
-      socket.off('gameInstancesUpdated', handleInstanceUpdate);
     };
-  }, [socket]);
+  }, []);
 
   useEffect(() => {
     const handleRoundComplete = (data) => {
@@ -134,7 +96,7 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
       socket.off('playerAnswered', handlePlayerAnswered);
       socket.off('newQuestion', handleNewQuestion);
     };
-  }, [setGameStatus, socket, setWinner, setHostQuip, setScores, setGameOver, setFinalScores, setPlayers, setResponseStatus]);
+  }, [setGameStatus, socket]);
 
   const handleNumQuestionsChange = (e) => {
     const value = parseInt(e.target.value, 10);
@@ -219,93 +181,15 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
     setError(null);
   };
 
-  const createNewInstance = async () => {
+  const resetGame = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.post('/api/createGameInstance');
-      setInstanceId(response.data.instanceId);
-      setError(null);
+      await axios.post('/api/resetGame');
+      newGame();
     } catch (error) {
-      console.error('Error creating game instance:', error);
+      console.error('Error resetting game:', error);
       showErrorToast(getErrorMessage(error));
-      setError('Failed to create game instance');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const switchInstance = async (id) => {
-    setIsLoading(true);
-    try {
-      const response = await axios.post('/api/switchGameInstance', { instanceId: id });
-      setInstanceId(id);
-      
-      // Update the game state based on the response
-      const gameState = response.data || {};
-      const gameStarted = gameState.gameStarted || false;
-      
-      // Set game status based on game state
-      setGameStatus(gameStarted ? 'started' : 'not started');
-      
-      // Only update current question if the game is started and there is a question
-      if (gameStarted && gameState.currentQuestion) {
-        setCurrentQuestion(gameState.currentQuestion);
-      } else {
-        // Reset question if game is not started
-        setCurrentQuestion(null);
-      }
-      
-      // Ensure scores and players are properly handled, using fallbacks for null values
-      setScores(gameState.scores || {});
-      setPlayers(gameState.players || []);
-      
-      // Reset all UI state to ensure consistency when switching instances
-      setResponseStatus({});
-      setWinner(null);
-      setHostQuip('');
-      setGameOver(false);
-      setFinalScores({});
-      setError(null);
-      
-      console.log(`Successfully switched to game instance: ${id}`);
-    } catch (error) {
-      console.error('Error switching game instance:', error);
-      showErrorToast(getErrorMessage(error));
-      setError('Failed to switch game instance');
-      
-      // Reset to safe state when error occurs
-      setGameStatus('not started');
-      setCurrentQuestion(null);
-      setScores({});
-      setPlayers([]);
-      setResponseStatus({});
-      setWinner(null);
-      setHostQuip('');
-      setGameOver(false);
-      setFinalScores({});
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const resetGameState = async () => {
-    setIsLoading(true);
-    try {
-      await axios.post('/api/resetGameState', { instanceId });
-      setGameStatus('not started');
-      setCurrentQuestion(null);
-      setScores({});
-      setPlayers([]);
-      setWinner(null);
-      setHostQuip('');
-      setGameOver(false);
-      setFinalScores({});
-      setResponseStatus({});
-      setError(null);
-    } catch (error) {
-      console.error('Error resetting game state:', error);
-      showErrorToast(getErrorMessage(error));
-      setError('Failed to reset game state');
+      setError('Failed to reset game');
     } finally {
       setIsLoading(false);
     }
@@ -324,28 +208,6 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
           </li>
         ))}
       </ul>
-    );
-  };
-
-  const renderInstanceButtons = () => {
-    if (!Array.isArray(activeInstances) || activeInstances.length === 0) {
-      return <p>No instances available</p>;
-    }
-
-    return (
-      <div className="instance-buttons">
-        {activeInstances.map((instance) => (
-          <button
-            key={instance.id}
-            className={`game-show-button ${instance.id === instanceId ? 'selected' : ''}`}
-            onClick={() => switchInstance(instance.id)}
-            disabled={isLoading}
-          >
-            {instance.id}
-            {instance.gameStarted ? ' (Active)' : ' (Not Started)'}
-          </button>
-        ))}
-      </div>
     );
   };
 
@@ -439,36 +301,6 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
     );
   }
 
-  const renderInstanceControls = () => (
-    <div className="instance-controls">
-      <h3>Game Instances</h3>
-      <button
-        className="game-show-button"
-        onClick={createNewInstance}
-        disabled={isLoading}
-      >
-        Create New Instance
-      </button>
-      
-      {activeInstances?.length > 0 && (
-        <div className="instance-list">
-          <h4>Switch to Instance:</h4>
-          {renderInstanceButtons()}
-        </div>
-      )}
-      
-      {instanceId && (
-        <button
-          className="game-show-button reset-button"
-          onClick={resetGameState}
-          disabled={isLoading}
-        >
-          Reset Current Instance
-        </button>
-      )}
-    </div>
-  );
-
   return (
     <div>
       <h1>Game Master View</h1>
@@ -479,8 +311,6 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
         </div>
       ) : (
         <>
-          {renderInstanceControls()}
-          
           <div className="game-show-container">
             <h2>Players and Scores</h2>
             {renderPlayersList()}
@@ -515,9 +345,16 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
             <button 
               className="game-show-button"
               onClick={startGame}
-              disabled={isLoading || !topics.trim() || !instanceId}
+              disabled={isLoading || !topics.trim()}
             >
               {isLoading ? 'Starting...' : 'Start Game'}
+            </button>
+            <button
+              className="game-show-button reset-button"
+              onClick={resetGame}
+              disabled={isLoading}
+            >
+              Reset Game
             </button>
           </div>
         </>

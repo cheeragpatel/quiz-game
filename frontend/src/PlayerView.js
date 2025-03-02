@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
 import { getErrorMessage, showErrorToast } from './utils/errorHandler.js';
@@ -10,55 +10,70 @@ const PlayerView = () => {
   const [score, setScore] = useState(0);
   const [hasAnswered, setHasAnswered] = useState(false);
   const [gameOver, setGameOver] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
   const [hostQuip, setHostQuip] = useState('');
   const [finalScores, setFinalScores] = useState({});
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Create a ref to store the socket connection
+  const socketRef = useRef(null);
 
   useEffect(() => {
-    const socket = io();
+    const socket = io('/', {
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000
+    });
+    
+    // Store socket in ref so it can be accessed outside this effect
+    socketRef.current = socket;
+
     let mounted = true;
+
+    socket.on('connect', () => {
+      console.log('Connected to server');
+      if (playerName) {
+        socket.emit('playerJoin', playerName);
+      }
+    });
 
     socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error);
       showErrorToast('Connection error. Trying to reconnect...');
     });
 
-    socket.on('error', (error) => {
-      console.error('Socket error:', error);
-      showErrorToast(getErrorMessage(error));
-    });
-
     const handleGameStarted = (data) => {
       if (!mounted) return;
+      setGameStarted(true);
+      setGameOver(false);
       setCurrentQuestion(data.currentQuestion);
-      setHasAnswered(false);
-      setSelectedAnswer('');
-      setScore(0);
-      setError(null);
     };
 
     const handleNewQuestion = (question) => {
       if (!mounted) return;
       setCurrentQuestion(question);
-      setHasAnswered(false);
       setSelectedAnswer('');
-      setError(null);
+      setHasAnswered(false);
     };
 
-    const handleScoreUpdate = (data) => {
-      if (!mounted || data.playerName !== playerName) return;
-      setScore(data.score);
-      if (data.correct) {
-        showErrorToast('Correct answer!');
+    const handleAnswerResult = (result) => {
+      if (!mounted) return;
+      if (result.success) {
+        showErrorToast(result.correct ? 'Correct answer!' : 'Wrong answer');
+        setScore(result.score || score);
       } else {
-        showErrorToast('Wrong answer.');
+        showErrorToast(result.error || 'Failed to submit answer');
+        setHasAnswered(false);
       }
     };
 
     const handleGameOver = (data) => {
       if (!mounted) return;
       setGameOver(true);
+      setGameStarted(false);
       setHostQuip(data.quip);
       setFinalScores(data.finalScores);
     };
@@ -68,7 +83,8 @@ const PlayerView = () => {
       setCurrentQuestion(state.currentQuestion);
       setScore(state.playerScores[playerName] || 0);
       setHasAnswered(!!state.playerAnswers[playerName]);
-      setGameOver(!state.gameStarted);
+      setGameStarted(state.gameStarted);
+      setGameOver(!state.gameStarted && state.hasEnded);
     };
 
     const initializePlayer = async () => {
@@ -96,7 +112,7 @@ const PlayerView = () => {
 
     socket.on('gameStarted', handleGameStarted);
     socket.on('newQuestion', handleNewQuestion);
-    socket.on('scoreUpdate', handleScoreUpdate);
+    socket.on('answerResult', handleAnswerResult);
     socket.on('gameOver', handleGameOver);
     socket.on('reconnectState', handleReconnectState);
 
@@ -104,32 +120,27 @@ const PlayerView = () => {
       mounted = false;
       socket.off('gameStarted', handleGameStarted);
       socket.off('newQuestion', handleNewQuestion);
-      socket.off('scoreUpdate', handleScoreUpdate);
+      socket.off('answerResult', handleAnswerResult);
       socket.off('gameOver', handleGameOver);
       socket.off('reconnectState', handleReconnectState);
       socket.disconnect();
+      socketRef.current = null;
     };
-  }, [playerName]);
+  }, [playerName, score]);
 
   const submitAnswer = async () => {
-    if (hasAnswered || !selectedAnswer) return;
+    if (hasAnswered || !selectedAnswer || !socketRef.current) return;
 
     setIsLoading(true);
     try {
-      const response = await axios.post('/api/submitAnswer', {
+      socketRef.current.emit('submitAnswer', {
         playerName,
         answer: selectedAnswer
       });
-
-      if (response.data.success) {
-        setHasAnswered(true);
-      } else {
-        throw new Error('Failed to submit answer');
-      }
+      setHasAnswered(true);
     } catch (error) {
       console.error('Submit answer error:', error);
-      showErrorToast(getErrorMessage(error));
-      setError('Failed to submit answer');
+      showErrorToast('Failed to submit answer');
       setHasAnswered(false);
     } finally {
       setIsLoading(false);
@@ -146,7 +157,16 @@ const PlayerView = () => {
     );
   }
 
-  if (!currentQuestion && !gameOver) {
+  if (!gameStarted && !gameOver) {
+    return (
+      <div className="waiting-container">
+        <h2>Waiting for Game to Start...</h2>
+        {isLoading && <div className="loading-spinner" />}
+      </div>
+    );
+  }
+
+  if (!currentQuestion && gameStarted) {
     return (
       <div className="loading-container">
         <h2>Waiting for the next question...</h2>

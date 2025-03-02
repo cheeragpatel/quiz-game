@@ -23,7 +23,17 @@ const __dirname = dirname(__filename);
 // Initialize Express app and HTTP server
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer);
+
+// Configure Socket.IO with settings matching the client
+const io = new Server(httpServer, {
+  pingTimeout: 10000,
+  pingInterval: 5000,
+  cors: {
+    origin: process.env.NODE_ENV === 'production' ? false : ["http://localhost:3000", "http://localhost:3001"],
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
 
 // Parse JSON request bodies
 app.use(express.json());
@@ -65,13 +75,10 @@ const gameState = new GameState();
 // Initialize the server
 async function initServer() {
   try {
-    // First clear any socket sessions
+    // Clear any socket sessions
     await clearSocketSessions();
     
-    // Manage game instances (clean up old ones)
-    await manageGameInstances();
-    
-    // Then load persistent game state or create fresh state on server startup
+    // Load persistent game state or create fresh state on server startup
     await gameState.loadState();
     
     // Always reset on server start to ensure clean state
@@ -80,7 +87,7 @@ async function initServer() {
     // Persist the clean state
     await gameState.persistState();
     
-    console.log('Game state reset and persisted on server startup');
+    console.log('Game state initialized on server startup');
   } catch (error) {
     console.error('Failed to initialize game state:', error);
   }
