@@ -2,6 +2,7 @@
  * Main API routes configuration
  */
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import { join } from 'path';
 import { ValidationError, StateError, asyncHandler, getErrorMessage } from '../utils/errorHandler.js';
 import { clearSocketSessions } from '../redis/redisClient.js';
@@ -347,8 +348,14 @@ export default function setupRoutes(app, io, gameState) {
   // Serve static files from the React frontend app
   app.use(express.static(join(process.cwd(), '../frontend/build')));
 
+  // Rate limiter configuration
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+  });
+
   // All other GET requests not handled before will return the React frontend app
-  app.get('*', (req, res) => {
+  app.get('*', limiter, (req, res) => {
     res.sendFile(join(process.cwd(), '../frontend/build/index.html'));
   });
 

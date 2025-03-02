@@ -35,7 +35,8 @@
     "socket.io-client": "^4.7.2",
     "web-vitals": "^3.5.0",
     "cors": "^2.8.5",
-    "express-async-handler": "^1.2.0"
+    "express-async-handler": "^1.2.0",
+    "express-rate-limit": "^7.5.0"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
