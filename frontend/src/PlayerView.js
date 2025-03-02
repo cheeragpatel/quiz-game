@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
+import { getErrorMessage, showErrorToast } from './utils/errorHandler.js';
 
 const PlayerView = () => {
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -11,58 +12,87 @@ const PlayerView = () => {
   const [gameOver, setGameOver] = useState(false);
   const [hostQuip, setHostQuip] = useState('');
   const [finalScores, setFinalScores] = useState({});
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const socket = io();
+    let mounted = true;
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      showErrorToast('Connection error. Trying to reconnect...');
+    });
+
+    socket.on('error', (error) => {
+      console.error('Socket error:', error);
+      showErrorToast(getErrorMessage(error));
+    });
 
     const handleGameStarted = (data) => {
+      if (!mounted) return;
       setCurrentQuestion(data.currentQuestion);
       setHasAnswered(false);
       setSelectedAnswer('');
       setScore(0);
+      setError(null);
     };
 
     const handleNewQuestion = (question) => {
+      if (!mounted) return;
       setCurrentQuestion(question);
       setHasAnswered(false);
       setSelectedAnswer('');
+      setError(null);
     };
 
     const handleScoreUpdate = (data) => {
-      if (data.playerName === playerName) {
-        setScore(data.score);
-        if (data.correct) {
-          alert('Correct answer!');
-        } else {
-          alert('Wrong answer.');
-        }
+      if (!mounted || data.playerName !== playerName) return;
+      setScore(data.score);
+      if (data.correct) {
+        showErrorToast('Correct answer!');
+      } else {
+        showErrorToast('Wrong answer.');
       }
     };
 
     const handleGameOver = (data) => {
+      if (!mounted) return;
       setGameOver(true);
       setHostQuip(data.quip);
       setFinalScores(data.finalScores);
     };
 
     const handleReconnectState = (state) => {
+      if (!mounted) return;
       setCurrentQuestion(state.currentQuestion);
       setScore(state.playerScores[playerName] || 0);
       setHasAnswered(!!state.playerAnswers[playerName]);
       setGameOver(!state.gameStarted);
     };
 
-    const storedPlayer = sessionStorage.getItem('playerName');
-    if (storedPlayer) {
-      setPlayerName(storedPlayer);
-    } else {
-      const name = prompt('Enter your GitHub Handle:');
-      if (name) {
-        setPlayerName(name);
-        sessionStorage.setItem('playerName', name);
-        axios.post('/api/register', { githubHandle: name }).catch(err => console.error(err));
+    const initializePlayer = async () => {
+      try {
+        const storedPlayer = sessionStorage.getItem('playerName');
+        if (storedPlayer) {
+          setPlayerName(storedPlayer);
+        } else {
+          const name = prompt('Enter your GitHub Handle:');
+          if (!name) {
+            throw new Error('Player name is required');
+          }
+          setPlayerName(name);
+          sessionStorage.setItem('playerName', name);
+          await axios.post('/api/register', { githubHandle: name });
+        }
+      } catch (error) {
+        console.error('Player initialization error:', error);
+        showErrorToast(getErrorMessage(error));
+        setError('Failed to initialize player');
       }
-    }
+    };
+
+    initializePlayer();
 
     socket.on('gameStarted', handleGameStarted);
     socket.on('newQuestion', handleNewQuestion);
@@ -71,6 +101,7 @@ const PlayerView = () => {
     socket.on('reconnectState', handleReconnectState);
 
     return () => {
+      mounted = false;
       socket.off('gameStarted', handleGameStarted);
       socket.off('newQuestion', handleNewQuestion);
       socket.off('scoreUpdate', handleScoreUpdate);
@@ -81,10 +112,9 @@ const PlayerView = () => {
   }, [playerName]);
 
   const submitAnswer = async () => {
-    if (hasAnswered || !selectedAnswer) {
-      return;
-    }
+    if (hasAnswered || !selectedAnswer) return;
 
+    setIsLoading(true);
     try {
       const response = await axios.post('/api/submitAnswer', {
         playerName,
@@ -94,16 +124,35 @@ const PlayerView = () => {
       if (response.data.success) {
         setHasAnswered(true);
       } else {
-        alert('Failed to submit answer. Please try again.');
+        throw new Error('Failed to submit answer');
       }
     } catch (error) {
-      alert('Failed to submit answer. Please try again.');
+      console.error('Submit answer error:', error);
+      showErrorToast(getErrorMessage(error));
+      setError('Failed to submit answer');
       setHasAnswered(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  if (error) {
+    return (
+      <div className="error-container">
+        <h2>Error</h2>
+        <p>{error}</p>
+        <button onClick={() => window.location.reload()}>Retry</button>
+      </div>
+    );
+  }
+
   if (!currentQuestion && !gameOver) {
-    return <div>Waiting for the next question...</div>;
+    return (
+      <div className="loading-container">
+        <h2>Waiting for the next question...</h2>
+        {isLoading && <div className="loading-spinner" />}
+      </div>
+    );
   }
 
   if (gameOver) {
@@ -115,12 +164,14 @@ const PlayerView = () => {
           <h3>Game Over!</h3>
           <p>{hostQuip}</p>
           <h3>Final Scores:</h3>
-          <ul>
-            {Object.entries(finalScores).map(([player, scoreValue]) => (
-              <li key={player}>
-                {player}: {scoreValue}
-              </li>
-            ))}
+          <ul className="final-scores-list">
+            {Object.entries(finalScores)
+              .sort(([,a], [,b]) => b - a)
+              .map(([player, scoreValue]) => (
+                <li key={player} className={player === playerName ? 'current-player' : ''}>
+                  {player}: {scoreValue}
+                </li>
+              ))}
           </ul>
         </div>
       </div>
@@ -138,7 +189,7 @@ const PlayerView = () => {
             <button
               className={`game-show-button ${selectedAnswer === choice ? 'selected' : ''}`}
               onClick={() => setSelectedAnswer(choice)}
-              disabled={hasAnswered}
+              disabled={hasAnswered || isLoading}
             >
               {choice}
             </button>
@@ -146,11 +197,11 @@ const PlayerView = () => {
         ))}
       </ul>
       <button
-        className="game-show-button"
+        className="game-show-button submit-button"
         onClick={submitAnswer}
-        disabled={hasAnswered || !selectedAnswer}
+        disabled={hasAnswered || !selectedAnswer || isLoading}
       >
-        Submit Answer
+        {isLoading ? 'Submitting...' : 'Submit Answer'}
       </button>
     </div>
   );

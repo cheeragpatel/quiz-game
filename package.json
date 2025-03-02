@@ -1,24 +1,80 @@
 {
   "name": "quiz-game",
   "version": "1.0.0",
-  "description": "A quiz game webapp that dynamically generates questions using GPT-4o.",
-  "main": "index.js",
+  "description": "A quiz game webapp that dynamically generates questions using GPT-4",
+  "type": "module",
   "scripts": {
+    "setup": "node setup.js",
     "start": "node backend/server.js",
-    "build": "cd frontend && npm install && npm run build"
+    "build": "cd frontend && npm install && npm run build",
+    "dev": "concurrently \"npm run start\" \"cd frontend && npm start\"",
+    "test": "jest",
+    "lint": "eslint .",
+    "frontend:start": "BROWSER=none react-scripts start",
+    "frontend:build": "GENERATE_SOURCEMAP=false react-scripts build",
+    "frontend:build:profile": "react-scripts build --profile",
+    "frontend:test": "react-scripts test",
+    "frontend:eject": "react-scripts eject",
+    "frontend:analyze": "source-map-explorer 'build/static/js/*.js'",
+    "backend:start": "node backend/server.js",
+    "backend:dev": "nodemon backend/server.js",
+    "backend:test": "node --experimental-vm-modules node_modules/.bin/jest --no-cache"
   },
   "dependencies": {
-    "axios": "^1.8.1",
-    "concurrently": "^9.1.2",
-    "express": "^4.21.2",
-    "openai": "^4.86.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-scripts": "5.0.1",
-    "socket.io": "^4.8.1",
-    "redis": "^4.7.0",
-    "@socket.io/redis-adapter": "^8.3.0"
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "redis": "^4.6.11",
+    "@socket.io/redis-adapter": "^8.2.1",
+    "openai": "^4.20.1",
+    "dotenv": "^16.3.1",
+    "axios": "^1.6.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.1",
+    "react-scripts": "^5.0.1",
+    "socket.io-client": "^4.7.2",
+    "web-vitals": "^3.5.0",
+    "cors": "^2.8.5",
+    "express-async-handler": "^1.2.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "jest": "^29.7.0",
+    "eslint": "^8.55.0",
+    "@babel/core": "^7.23.5",
+    "@babel/eslint-parser": "^7.23.3",
+    "@babel/plugin-transform-private-property-in-object": "^7.23.4",
+    "@babel/preset-env": "^7.23.5",
+    "@babel/preset-react": "^7.23.3",
+    "nodemon": "^3.0.2",
+    "redis-mock": "^0.56.3",
+    "supertest": "^6.3.3",
+    "@testing-library/jest-dom": "^6.1.5",
+    "@testing-library/react": "^14.1.2",
+    "@testing-library/user-event": "^14.5.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "eslintConfig": {
+    "extends": [
+      "react-app",
+      "react-app/jest"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "proxy": "http://localhost:3001"
 }

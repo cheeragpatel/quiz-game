@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import axios from 'axios';
-import RegistrationForm from './RegistrationForm';
-import GameMasterView from './GameMasterView';
-import GameShowView from './GameShowView';
-import PlayerView from './PlayerView';
+import RegistrationForm from './RegistrationForm.js';
+import GameMasterView from './GameMasterView.js';
+import GameShowView from './GameShowView.js';
+import PlayerView from './PlayerView.js';
+import { ErrorBoundary } from './utils/errorHandler.js';
 
 function App() {
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -63,34 +64,36 @@ function App() {
   }, [gameStatus]);
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<RegistrationForm />} />
-        <Route 
-          path="/game-master" 
-          element={
-            <GameMasterView 
-              setCurrentQuestion={setCurrentQuestion} 
-              setGameStatus={setGameStatus} 
-            />
-          } 
-        />
-        <Route 
-          path="/game-show" 
-          element={
-            <GameShowView />
-          } 
-        />
-        <Route 
-          path="/player" 
-          element={
-            <PlayerView 
-              currentQuestion={currentQuestion} 
-            />
-          } 
-        />
-      </Routes>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <Routes>
+          <Route path="/" element={<RegistrationForm />} />
+          <Route 
+            path="/game-master" 
+            element={
+              <GameMasterView 
+                setCurrentQuestion={setCurrentQuestion} 
+                setGameStatus={setGameStatus} 
+              />
+            } 
+          />
+          <Route 
+            path="/game-show" 
+            element={
+              <GameShowView />
+            } 
+          />
+          <Route 
+            path="/player" 
+            element={
+              <PlayerView 
+                currentQuestion={currentQuestion} 
+              />
+            } 
+          />
+        </Routes>
+      </Router>
+    </ErrorBoundary>
   );
 }
 
