@@ -1,43 +1,39 @@
 import OpenAI from 'openai';
+import { ValidationError, GameError } from './utils/errorHandler.js';
 
 const token = process.env["OPENAI_API_KEY"];
 const endpoint = "https://api.openai.com/v1";
-const modelName = "gpt-4o";
+const modelName = "gpt-4o";  // Restored original model name
+
+// Validate environment variables
+if (!token) {
+  throw new Error('OPENAI_API_KEY environment variable is required');
+}
 
 const openai = new OpenAI({
   apiKey: token,
   baseURL: endpoint,
-})
+});
+
+const baseSystemPrompt = "You are a 70's game show host named Mona Woolery in the style of Bob Barker and Chuck Woolery. Keep responses concise and under 200 characters.";
 
 /**
- * Helper function to generate a prompt for the OpenAI API.
- * @param {string} context - The context for the prompt.
- * @param {string} winners - The winners or correct answer.
- * @returns {string} - The generated prompt.
+ * Generate a host response using OpenAI's API.
+ * @param {string} prompt - The prompt for the host.
+ * @returns {Promise<string>} - The generated response.
+ * @throws {ValidationError} If prompt is invalid
+ * @throws {GameError} If API call fails
  */
-function generatePrompt(context, winners) {
-  if (context === 'no winners') {
-    const prompts = [
-      `Ouch! Not a single correct answer! The answer was "${winners}". Here's a witty 70's game show host comment about everyone getting it wrong...`,
-      `Nobody got this one! The correct answer was "${winners}". Give me a funny, encouraging 70's game show host response...`,
-      `Strike out! The answer was "${winners}". Share a humorous 70's style game show host quip about the collective miss...`
-    ];
-    return prompts[Math.floor(Math.random() * prompts.length)];
-  } else {
-    return context;
+async function generateHostResponse(prompt) {
+  if (!prompt || typeof prompt !== 'string') {
+    throw new ValidationError('Prompt must be a non-empty string');
   }
-}
 
-async function generateHostQuip(context, winners) {
   try {
-    const prompt = generatePrompt(context, winners);
     const response = await openai.chat.completions.create({
       model: modelName,
       messages: [
-        {
-          role: "system",
-          content: "You are a 70's game show host named Mona Woolery in the style of Bob Barker and Chuck Woolery. Keep responses concise and under 200 characters."
-        },
+        { role: "system", content: baseSystemPrompt },
         { role: "user", content: prompt }
       ],
       max_tokens: 50,
@@ -45,94 +41,94 @@ async function generateHostQuip(context, winners) {
       top_p: 1.0,
     });
 
-    let quip = response.choices[0].message.content;
-    quip = quip ? quip.trim() : "Right on!";
-    return quip;
-  } catch (error) {
-    console.error('Error generating host quip:', error);
-    return 'Groovy!';
-  }
-}
-
-async function hostGame(question, winner) {
-  try {
-    let context;
-    let winners;
-    if (Array.isArray(winner) && winner.length > 1) {
-      context = `Make a witty quip about a tie between ${winner.join(' and ')} on the question "${question}".`;
-      winners = winner;
-    } else if (winner.length === 0) {
-      context = 'no winners';
-      winners = 'the correct answer';
-    } else {
-      context = `Make a quip about the question "${question}" and the winner "${winner[0]}".`;
-      winners = winner[0];
+    if (!response.choices?.[0]?.message?.content) {
+      throw new GameError('Invalid API response structure');
     }
 
-    const quip = await generateHostQuip(context, winners);
-    console.log(`Host: ${quip}`);
+    const quip = response.choices[0].message.content.trim();
+    return quip || "Right on!";
   } catch (error) {
-    console.error('Error hosting game:', error);
+    if (error instanceof GameError || error instanceof ValidationError) {
+      throw error;
+    }
+    console.error('Error generating host response:', error);
+    throw new GameError('Failed to generate host response: ' + error.message);
   }
 }
 
+/**
+ * Generate a host quip based on game context.
+ * @param {string} context - The context for the quip.
+ * @param {string|string[]} winners - The winner(s) or correct answer.
+ * @returns {Promise<string>} - The generated quip.
+ * @throws {ValidationError} If input parameters are invalid
+ * @throws {GameError} If quip generation fails
+ */
+async function generateHostQuip(context, winners) {
+  if (!context || typeof context !== 'string') {
+    throw new ValidationError('Context must be a non-empty string');
+  }
+
+  if (!winners || (typeof winners !== 'string' && !Array.isArray(winners))) {
+    throw new ValidationError('Winners must be a string or array');
+  }
+
+  try {
+    let prompt;
+    if (context === 'no winners') {
+      const templates = [
+        `Ouch! Not a single correct answer! The answer was "${winners}". Here's a witty 70's game show host comment about everyone getting it wrong...`,
+        `Nobody got this one! The correct answer was "${winners}". Give me a funny, encouraging 70's game show host response...`,
+        `Strike out! The answer was "${winners}". Share a humorous 70's style game show host quip about the collective miss...`
+      ];
+      prompt = templates[Math.floor(Math.random() * templates.length)];
+    } else if (Array.isArray(winners) && winners.length > 1) {
+      prompt = `Make a witty quip about a tie between ${winners.join(' and ')} on the question "${context}".`;
+    } else {
+      const winner = Array.isArray(winners) ? winners[0] : winners;
+      prompt = `Make a quip about the question "${context}" and the winner "${winner}".`;
+    }
+    
+    return generateHostResponse(prompt);
+  } catch (error) {
+    if (error instanceof GameError || error instanceof ValidationError) {
+      throw error;
+    }
+    console.error('Error generating host quip:', error);
+    throw new GameError('Failed to generate host quip: ' + error.message);
+  }
+}
+
+/**
+ * Generate a goodbye message for the show.
+ * @returns {Promise<string>} - The generated goodbye message.
+ * @throws {GameError} If message generation fails
+ */
 async function generateGoodbyeQuip() {
   try {
-    const response = await openai.chat.completions.create({
-      model: modelName,
-      messages: [
-        {
-          role: "system",
-          content: "You are a 70's game show host named Mona Woolery in the style of Bob Barker and Chuck Woolery. Keep responses concise and under 200 characters."
-        },
-        {
-          role: "user",
-          content: "Generate a warm, fun goodbye message to end the game show, mentioning how great everyone played."
-        }
-      ],
-      max_tokens: 50,
-      temperature: 1.0,
-      top_p: 1.0,
-    });
-
-    let quip = response.choices[0].message.content;
-    return quip ? quip.trim() : "That's our show folks! See you next time!";
+    return generateHostResponse("Generate a warm, fun goodbye message to end the game show, mentioning how great everyone played.");
   } catch (error) {
     console.error('Error generating goodbye quip:', error);
-    return "And that's the way it is! Goodbye everybody!";
+    throw new GameError('Failed to generate goodbye message: ' + error.message);
   }
 }
 
+/**
+ * Generate an introduction for the show.
+ * @returns {Promise<string>} - The generated introduction.
+ * @throws {GameError} If introduction generation fails
+ */
 async function generateIntroductionQuip() {
   try {
-    const response = await openai.chat.completions.create({
-      model: modelName,
-      messages: [
-        {
-          role: "system",
-          content: "You are a 70's game show host named Mona Woolery in the style of Bob Barker and Chuck Woolery. Keep responses concise and under 200 characters."
-        },
-        {
-          role: "user",
-          content: "Introduce yourself as the host of this quiz game show with enthusiasm and 70's flair!"
-        }
-      ],
-      max_tokens: 50,
-      temperature: 1.0,
-      top_p: 1.0,
-    });
-
-    let quip = response.choices[0].message.content;
-    return quip ? quip.trim() : "Hi folks! I'm Mona Woolery, and this is THE QUIZ SHOW!";
+    return generateHostResponse("Introduce yourself as the host of this quiz game show with enthusiasm and 70's flair!");
   } catch (error) {
-    console.error('Error generating introduction quip:', error);
-    return "Hi folks! I'm Mona Woolery, and this is THE QUIZ SHOW!";
+    console.error('Error generating introduction:', error);
+    throw new GameError('Failed to generate introduction: ' + error.message);
   }
 }
 
 export {
   generateHostQuip,
-  hostGame,
   generateGoodbyeQuip,
   generateIntroductionQuip
 };

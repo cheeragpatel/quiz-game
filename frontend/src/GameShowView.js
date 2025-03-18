@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
-import PlayerStatus from './components/PlayerStatus';
-import ResponseStatus from './components/ResponseStatus';
+import PlayerStatus from './components/PlayerStatus.js';
+import ResponseStatus from './components/ResponseStatus.js';
+import { getErrorMessage, showErrorToast } from './utils/errorHandler.js';
 
-const GameShowView = () => {
+const GameShowView = ({ currentQuestion: propQuestion, gameStatus }) => {
   const [winners, setWinners] = useState([]);
   const [hostQuip, setHostQuip] = useState('');
   const [avatarUrls, setAvatarUrls] = useState({});
@@ -13,209 +14,242 @@ const GameShowView = () => {
   const [gameOver, setGameOver] = useState(false);
   const [finalScores, setFinalScores] = useState({});
   const [registeredPlayers, setRegisteredPlayers] = useState([]);
-  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [currentQuestion, setCurrentQuestion] = useState(propQuestion);
   const [finalWinners, setFinalWinners] = useState([]);
   const [goodbyeQuip, setGoodbyeQuip] = useState('');
   const [introQuip, setIntroQuip] = useState('');
   const [responseStatus, setResponseStatus] = useState({});
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch initial players when component mounts
-  useEffect(() => {
-    const fetchPlayers = async () => {
-      try {
-        const response = await axios.get('/api/players');
-        setRegisteredPlayers(response.data);
-        if (response.data.length > 0) {
-          generateWelcomeQuip(response.data).then(setWelcomeQuip);
-        }
-      } catch (error) {
-        console.error('Error fetching players:', error);
-      }
-    };
-    fetchPlayers();
-  }, []);
+  // Create a ref to store the socket connection
+  const socketRef = useRef(null);
 
   useEffect(() => {
-    const fetchWelcomeQuip = async () => {
-      try {
-        const response = await axios.get('/api/welcomeQuip');
-        setWelcomeQuip(response.data.quip);
-      } catch (error) {
-        console.error('Error fetching welcome quip:', error);
-      }
-    };
-    fetchWelcomeQuip();
-  }, []);
+    const socket = io('/', {
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000
+    });
+    
+    // Store socket in ref so it can be accessed outside this effect
+    socketRef.current = socket;
 
-  useEffect(() => {
-    const socket = io();
+    let mounted = true;
 
-    // Listen for the 'gameStarted' event
-    socket.on('gameStarted', (data) => {
+    socket.on('connect', () => {
+      console.log('GameShow view connected to server');
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      showErrorToast('Connection error. Trying to reconnect...');
+    });
+
+    socket.on('error', (error) => {
+      console.error('Socket error:', error);
+      showErrorToast(getErrorMessage(error));
+    });
+
+    const handleGameStarted = (data) => {
+      if (!mounted) return;
       setGameStarted(true);
+      setGameOver(false);
       setCurrentQuestion(data.currentQuestion);
       setIntroQuip(data.introQuip);
       setWelcomeQuip(data.welcomeQuip);
-    });
+      setResponseStatus({});
+      setError(null);
+    };
 
-    socket.on('newQuestion', (question) => {
+    const handleNewQuestion = (question) => {
+      if (!mounted) return;
       setCurrentQuestion(question);
       setWinners([]);
       setHostQuip('');
-      setAvatarUrls({});
       setResponseStatus({});
-    });
+    };
 
-    socket.on('roundComplete', async (data) => {
-      console.log('Round complete data:', data);
-      
-      if (data.winners && data.winners.length === 0) {
-        // No winners case
-        setWinners([]);
-        setHostQuip(`${data.quip}\nThe correct answer was: ${data.correctAnswer}`);
-        setAvatarUrls({});
-      } else {
-        // Normal winners case
-        const winnersList = data.winners || 
-          (Array.isArray(data.winner) ? data.winner : [data.winner]);
-        
-        if (winnersList.length > 0) {
-          setWinners(winnersList);
-          setHostQuip(data.quip || 'And the winner is...');
-          
-          // Fetch avatars
-          const avatars = {};
-          await Promise.all(
-            winnersList.map(async (winner) => {
-              if (!winner) return;
-              try {
-                const response = await fetch(`https://api.github.com/users/${winner}`);
-                if (!response.ok) throw new Error('Avatar fetch failed');
-                const userData = await response.json();
-                avatars[winner] = userData.avatar_url;
-              } catch (error) {
-                console.error(`Error fetching avatar for ${winner}:`, error);
-                avatars[winner] = '/default-avatar.png';
-              }
-            })
-          );
-          setAvatarUrls(avatars);
-        }
-      }
-    });
-
-    socket.on('gameOver', async (data) => {
-      setGameOver(true);
-      setFinalWinners(data.winners);
-      setFinalScores(data.finalScores);
-      setHostQuip(data.quip);
+    const handleRoundComplete = async (data) => {
+      if (!mounted) return;
       
       try {
-        // Get goodbye quip from virtual host
-        const goodbyeQuip = await axios.get('/api/goodbyeQuip');
-        setGoodbyeQuip(goodbyeQuip.data.quip);
+        if (!data.winner) {
+          setWinners([]);
+          setHostQuip(`${data.quip}\nThe correct answer was: ${data.correctAnswer}`);
+        } else {
+          setWinners(Array.isArray(data.winner) ? data.winner : [data.winner]);
+          setHostQuip(data.quip);
+        }
       } catch (error) {
-        console.error('Error fetching goodbye quip:', error);
-        setGoodbyeQuip("That's all folks! See you next time!");
+        console.error('Error handling round complete:', error);
       }
-      
-      // Fetch avatars...
-    });
+    };
 
-    socket.on('playerRegistered', (players) => {
+    const handleGameOver = async (data) => {
+      if (!mounted) return;
+      try {
+        setGameOver(true);
+        setGameStarted(false);
+        setFinalWinners(Array.isArray(data.winners) ? data.winners : [data.winners]);
+        setFinalScores(data.finalScores);
+        setHostQuip(data.quip);
+
+        const goodbyeResponse = await axios.get('/api/goodbyeQuip');
+        if (mounted) {
+          setGoodbyeQuip(goodbyeResponse.data.quip);
+        }
+      } catch (error) {
+        console.error('Error handling game over:', error);
+        if (mounted) {
+          setGoodbyeQuip("That's all folks! See you next time!");
+        }
+      }
+    };
+
+    const handlePlayerRegistered = (players) => {
+      if (!mounted) return;
       setRegisteredPlayers(players);
-      generateWelcomeQuip(players).then(setWelcomeQuip);
-    });
+    };
 
-    socket.on('playerAnswered', (data) => {
+    const handlePlayerAnswered = (data) => {
+      if (!mounted) return;
       setResponseStatus(prev => ({
         ...prev,
         [data.playerName]: true
       }));
-    });
+    };
 
-    socket.on('reconnectState', (state) => {
+    const handleReconnectState = (state) => {
+      if (!mounted) return;
       setGameStarted(state.gameStarted);
       setCurrentQuestion(state.currentQuestion);
-      setRegisteredPlayers(state.registeredPlayers);
-      setFinalScores(state.playerScores);
-      setResponseStatus(state.playerAnswers);
-    });
+      setGameOver(!state.gameStarted && state.hasEnded);
+      setFinalScores(state.playerScores || {});
+      setRegisteredPlayers(state.registeredPlayers || []);
+    };
 
-    return () => socket.disconnect();
+    const fetchInitialData = async () => {
+      try {
+        const [playersResponse, welcomeResponse] = await Promise.all([
+          axios.get('/api/players'),
+          axios.get('/api/welcomeQuip')
+        ]);
+
+        if (mounted) {
+          setRegisteredPlayers(playersResponse.data.players);
+          setWelcomeQuip(welcomeResponse.data.quip);
+          setError(null);
+        }
+      } catch (error) {
+        console.error('Error fetching initial data:', error);
+        if (mounted) {
+          setError('Failed to load initial game data');
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchInitialData();
+
+    socket.on('gameStarted', handleGameStarted);
+    socket.on('newQuestion', handleNewQuestion);
+    socket.on('roundComplete', handleRoundComplete);
+    socket.on('gameOver', handleGameOver);
+    socket.on('playerRegistered', handlePlayerRegistered);
+    socket.on('playerAnswered', handlePlayerAnswered);
+    socket.on('reconnectState', handleReconnectState);
+
+    return () => {
+      mounted = false;
+      socket.off('gameStarted', handleGameStarted);
+      socket.off('newQuestion', handleNewQuestion);
+      socket.off('roundComplete', handleRoundComplete);
+      socket.off('gameOver', handleGameOver);
+      socket.off('playerRegistered', handlePlayerRegistered);
+      socket.off('playerAnswered', handlePlayerAnswered);
+      socket.off('reconnectState', handleReconnectState);
+      socket.disconnect();
+      socketRef.current = null;
+    };
   }, []);
 
-  const generateWelcomeQuip = async (players) => {
-    try {
-      const playerNames = players.map(player => player.githubHandle).join(', ');
-      const prompt = `Welcome to the show ${playerNames}! Give a fun 70's welcome quip.`;
-      const response = await axios.post('/api/generateQuip', { prompt });
-      return response.data.quip;
-    } catch (error) {
-      console.error('Error generating welcome quip:', error);
-      return "Welcome to the show!";
-    }
-  };
+  // Update from props
+  useEffect(() => {
+    setCurrentQuestion(propQuestion);
+  }, [propQuestion]);
 
-  // Game over display with champion highlight and final scores
+  useEffect(() => {
+    if (gameStatus === 'started') {
+      setGameStarted(true);
+      setGameOver(false);
+    } else if (gameStatus === 'ended') {
+      setGameOver(true);
+      setGameStarted(false);
+    }
+  }, [gameStatus]);
+
+  if (error) {
+    return (
+      <div className="error-container">
+        <h2>Error</h2>
+        <p>{error}</p>
+        <button onClick={() => window.location.reload()}>Retry</button>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div className="loading-container">
+        <h2>Loading game show...</h2>
+        <div className="loading-spinner" />
+      </div>
+    );
+  }
+
   if (gameOver) {
     return (
       <div className="game-show-container">
-        {/* Main header announcing game completion */}
         <h1 className="game-show-header">Game Show Finale!</h1>
-
-        {/* Champion section with avatar and celebration message */}
         <div className="champion-section">
-          <h2>🏆 Champion 🏆</h2>
-          {finalWinners.map((winner) => (
-            <div key={winner} className="champion-display">
-              <img
-                src={avatarUrls[winner]}
-                alt={`${winner}'s avatar`}
-                className="champion-avatar"
-                onError={(e) => {
-                  e.target.src = '/default-avatar.png';
-                }}
-              />
-              <h3>{winner}</h3>
-              <p className="champion-score">Score: {finalScores[winner]}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Celebratory quip about the winner */}
-        <div className="winner-message">
-          <p>{hostQuip}</p>
-        </div>
-
-        {/* Final scoreboard showing all players */}
-        <div className="final-scoreboard">
-          <h3>Final Standings</h3>
-          <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Player</th>
-                <th>Score</th>
-              </tr>
-            </thead>
-            <tbody>
+          <h2>🏆 Champion{finalWinners.length > 1 ? 's' : ''} 🏆</h2>
+          <div className="winners-display">
+            {finalWinners.map((winner) => (
+              <div key={winner} className="champion-display">
+                <img
+                  src={avatarUrls[winner] || '/default-avatar.png'}
+                  alt={`${winner}'s avatar`}
+                  className="champion-avatar"
+                  onError={(e) => {
+                    e.target.src = '/default-avatar.png';
+                  }}
+                />
+                <h3>{winner}</h3>
+              </div>
+            ))}
+          </div>
+          <p className="host-quip">{hostQuip}</p>
+          <div className="final-scores">
+            <h3>Final Scores</h3>
+            <ul className="scores-list">
               {Object.entries(finalScores)
-                .sort(([, a], [, b]) => b - a)
-                .map(([player, score], index) => (
-                  <tr key={player} className={finalWinners.includes(player) ? 'winner-row' : ''}>
-                    <td>#{index + 1}</td>
-                    <td>{player}</td>
-                    <td>{score}</td>
-                  </tr>
+                .sort(([,a], [,b]) => b - a)
+                .map(([player, score]) => (
+                  <li key={player}>
+                    {player}: {score} points
+                  </li>
                 ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Goodbye message */}
-        <div className="goodbye-message">
-          <p>{goodbyeQuip}</p>
+            </ul>
+          </div>
+          <div className="goodbye-message">
+            <p>{goodbyeQuip}</p>
+          </div>
         </div>
       </div>
     );
@@ -223,7 +257,7 @@ const GameShowView = () => {
 
   return (
     <div className="game-show-container">
-      <h1 className="game-show-header">Welcome to Triva Night!</h1>
+      <h1 className="game-show-header">Welcome to Trivia Night!</h1>
       
       {!gameStarted && (
         <div className="game-show-welcome">
@@ -250,70 +284,34 @@ const GameShowView = () => {
               <li key={index}>{choice}</li>
             ))}
           </ul>
+          {winners.length > 0 && (
+            <div className="game-show-winner-overlay">
+              <div className="game-show-winner">
+                <div className="winners-avatars">
+                  {winners.map((winner) => (
+                    <img 
+                      key={winner}
+                      src={avatarUrls[winner] || '/default-avatar.png'}
+                      alt={`${winner}'s avatar`}
+                      className="winner-avatar"
+                      onError={(e) => {
+                        e.target.src = '/default-avatar.png';
+                      }}
+                    />
+                  ))}
+                </div>
+                <h3>
+                  {winners.length > 1 
+                    ? `It's a tie between ${winners.join(' and ')}!`
+                    : `Round Winner: ${winners[0]}`}
+                </h3>
+                <p>{hostQuip}</p>
+              </div>
+            </div>
+          )}
         </>
       )}
 
-      {gameOver ? (
-        <div className="game-show-winner-overlay">
-          <div className="game-show-winner">
-            <div className="winners-avatars">
-              {winners.map((winner) => (
-                <img 
-                  key={winner}
-                  src={avatarUrls[winner]} 
-                  alt={`${winner}'s avatar`} 
-                  className="winner-avatar"
-                  onError={(e) => {
-                    e.target.src = '/default-avatar.png';
-                  }}
-                />
-              ))}
-            </div>
-            <h2>Game Over!</h2>
-            <h3>
-              {winners.length > 1 
-                ? `It's a tie between ${winners.join(' and ')}!` 
-                : `Final Winner: ${winners[0]}`}
-            </h3>
-            <p>{hostQuip}</p>
-            <div className="final-scores">
-              {Object.entries(finalScores)
-                .sort(([,a], [,b]) => b - a)
-                .map(([player, score]) => (
-                  <div key={player} className="score-entry">
-                    {player}: {score} points
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
-      ) : (
-        winners.length > 0 && (
-          <div className="game-show-winner-overlay">
-            <div className="game-show-winner">
-              <div className="winners-avatars">
-                {winners.map((winner) => (
-                  <img 
-                    key={winner}
-                    src={avatarUrls[winner]} 
-                    alt={`${winner}'s avatar`} 
-                    className="winner-avatar"
-                    onError={(e) => {
-                      e.target.src = '/default-avatar.png';
-                    }}
-                  />
-                ))}
-              </div>
-              <h3>
-                {winners.length > 1 
-                  ? `It's a tie between ${winners.join(' and ')}!` 
-                  : `Round Winner: ${winners[0]}`}
-              </h3>
-              <p>{hostQuip}</p>
-            </div>
-          </div>
-        )
-      )}
       <PlayerStatus players={registeredPlayers} responseStatus={responseStatus} />
       <ResponseStatus players={registeredPlayers} responseStatus={responseStatus} />
     </div>

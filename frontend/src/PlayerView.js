@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import io from 'socket.io-client';
+import { getErrorMessage, showErrorToast } from './utils/errorHandler.js';
 
 const PlayerView = () => {
   const [currentQuestion, setCurrentQuestion] = useState(null);
@@ -9,101 +10,169 @@ const PlayerView = () => {
   const [score, setScore] = useState(0);
   const [hasAnswered, setHasAnswered] = useState(false);
   const [gameOver, setGameOver] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
   const [hostQuip, setHostQuip] = useState('');
   const [finalScores, setFinalScores] = useState({});
+  const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Create a ref to store the socket connection
+  const socketRef = useRef(null);
 
   useEffect(() => {
-    const socket = io();
+    const socket = io('/', {
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 10000
+    });
+    
+    // Store socket in ref so it can be accessed outside this effect
+    socketRef.current = socket;
+
+    let mounted = true;
+
+    socket.on('connect', () => {
+      console.log('Connected to server');
+      if (playerName) {
+        socket.emit('playerJoin', playerName);
+      }
+    });
+
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
+      showErrorToast('Connection error. Trying to reconnect...');
+    });
 
     const handleGameStarted = (data) => {
+      if (!mounted) return;
+      setGameStarted(true);
+      setGameOver(false);
       setCurrentQuestion(data.currentQuestion);
-      setHasAnswered(false);
-      setSelectedAnswer('');
-      setScore(0);
     };
 
     const handleNewQuestion = (question) => {
+      if (!mounted) return;
       setCurrentQuestion(question);
-      setHasAnswered(false);
       setSelectedAnswer('');
+      setHasAnswered(false);
     };
 
-    const handleScoreUpdate = (data) => {
-      if (data.playerName === playerName) {
-        setScore(data.score);
-        if (data.correct) {
-          alert('Correct answer!');
-        } else {
-          alert('Wrong answer.');
-        }
+    const handleAnswerResult = (result) => {
+      if (!mounted) return;
+      if (result.success) {
+        showErrorToast(result.correct ? 'Correct answer!' : 'Wrong answer');
+        setScore(result.score || score);
+      } else {
+        showErrorToast(result.error || 'Failed to submit answer');
+        setHasAnswered(false);
       }
     };
 
     const handleGameOver = (data) => {
+      if (!mounted) return;
       setGameOver(true);
+      setGameStarted(false);
       setHostQuip(data.quip);
       setFinalScores(data.finalScores);
     };
 
     const handleReconnectState = (state) => {
+      if (!mounted) return;
       setCurrentQuestion(state.currentQuestion);
       setScore(state.playerScores[playerName] || 0);
       setHasAnswered(!!state.playerAnswers[playerName]);
-      setGameOver(!state.gameStarted);
+      setGameStarted(state.gameStarted);
+      setGameOver(!state.gameStarted && state.hasEnded);
     };
 
-    const storedPlayer = sessionStorage.getItem('playerName');
-    if (storedPlayer) {
-      setPlayerName(storedPlayer);
-    } else {
-      const name = prompt('Enter your GitHub Handle:');
-      if (name) {
-        setPlayerName(name);
-        sessionStorage.setItem('playerName', name);
-        axios.post('/api/register', { githubHandle: name }).catch(err => console.error(err));
+    const initializePlayer = async () => {
+      try {
+        const storedPlayer = sessionStorage.getItem('playerName');
+        if (storedPlayer) {
+          setPlayerName(storedPlayer);
+        } else {
+          const name = prompt('Enter your GitHub Handle:');
+          if (!name) {
+            throw new Error('Player name is required');
+          }
+          setPlayerName(name);
+          sessionStorage.setItem('playerName', name);
+          await axios.post('/api/register', { githubHandle: name });
+        }
+      } catch (error) {
+        console.error('Player initialization error:', error);
+        showErrorToast(getErrorMessage(error));
+        setError('Failed to initialize player');
       }
-    }
+    };
+
+    initializePlayer();
 
     socket.on('gameStarted', handleGameStarted);
     socket.on('newQuestion', handleNewQuestion);
-    socket.on('scoreUpdate', handleScoreUpdate);
+    socket.on('answerResult', handleAnswerResult);
     socket.on('gameOver', handleGameOver);
     socket.on('reconnectState', handleReconnectState);
 
     return () => {
+      mounted = false;
       socket.off('gameStarted', handleGameStarted);
       socket.off('newQuestion', handleNewQuestion);
-      socket.off('scoreUpdate', handleScoreUpdate);
+      socket.off('answerResult', handleAnswerResult);
       socket.off('gameOver', handleGameOver);
       socket.off('reconnectState', handleReconnectState);
       socket.disconnect();
+      socketRef.current = null;
     };
-  }, [playerName]);
+  }, [playerName, score]);
 
   const submitAnswer = async () => {
-    if (hasAnswered || !selectedAnswer) {
-      return;
-    }
+    if (hasAnswered || !selectedAnswer || !socketRef.current) return;
 
+    setIsLoading(true);
     try {
-      const response = await axios.post('/api/submitAnswer', {
+      socketRef.current.emit('submitAnswer', {
         playerName,
         answer: selectedAnswer
       });
-
-      if (response.data.success) {
-        setHasAnswered(true);
-      } else {
-        alert('Failed to submit answer. Please try again.');
-      }
+      setHasAnswered(true);
     } catch (error) {
-      alert('Failed to submit answer. Please try again.');
+      console.error('Submit answer error:', error);
+      showErrorToast('Failed to submit answer');
       setHasAnswered(false);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  if (!currentQuestion && !gameOver) {
-    return <div>Waiting for the next question...</div>;
+  if (error) {
+    return (
+      <div className="error-container">
+        <h2>Error</h2>
+        <p>{error}</p>
+        <button onClick={() => window.location.reload()}>Retry</button>
+      </div>
+    );
+  }
+
+  if (!gameStarted && !gameOver) {
+    return (
+      <div className="waiting-container">
+        <h2>Waiting for Game to Start...</h2>
+        {isLoading && <div className="loading-spinner" />}
+      </div>
+    );
+  }
+
+  if (!currentQuestion && gameStarted) {
+    return (
+      <div className="loading-container">
+        <h2>Waiting for the next question...</h2>
+        {isLoading && <div className="loading-spinner" />}
+      </div>
+    );
   }
 
   if (gameOver) {
@@ -115,12 +184,14 @@ const PlayerView = () => {
           <h3>Game Over!</h3>
           <p>{hostQuip}</p>
           <h3>Final Scores:</h3>
-          <ul>
-            {Object.entries(finalScores).map(([player, scoreValue]) => (
-              <li key={player}>
-                {player}: {scoreValue}
-              </li>
-            ))}
+          <ul className="final-scores-list">
+            {Object.entries(finalScores)
+              .sort(([,a], [,b]) => b - a)
+              .map(([player, scoreValue]) => (
+                <li key={player} className={player === playerName ? 'current-player' : ''}>
+                  {player}: {scoreValue}
+                </li>
+              ))}
           </ul>
         </div>
       </div>
@@ -138,7 +209,7 @@ const PlayerView = () => {
             <button
               className={`game-show-button ${selectedAnswer === choice ? 'selected' : ''}`}
               onClick={() => setSelectedAnswer(choice)}
-              disabled={hasAnswered}
+              disabled={hasAnswered || isLoading}
             >
               {choice}
             </button>
@@ -146,11 +217,11 @@ const PlayerView = () => {
         ))}
       </ul>
       <button
-        className="game-show-button"
+        className="game-show-button submit-button"
         onClick={submitAnswer}
-        disabled={hasAnswered || !selectedAnswer}
+        disabled={hasAnswered || !selectedAnswer || isLoading}
       >
-        Submit Answer
+        {isLoading ? 'Submitting...' : 'Submit Answer'}
       </button>
     </div>
   );
