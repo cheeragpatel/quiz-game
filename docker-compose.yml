@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Enable BuildKit by default
 x-build-args: &build-args
   DOCKER_BUILDKIT: 1
@@ -18,6 +16,7 @@ services:
       - NODE_ENV=production
       - REDIS_URL=redis://redis:6379
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_ENDPOINT=${OPENAI_API_ENDPOINT}
     depends_on:
       - redis
     # Removed volumes mapping for node_modules to allow production dependencies

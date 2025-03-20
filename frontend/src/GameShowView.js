@@ -25,6 +25,30 @@ const GameShowView = ({ currentQuestion: propQuestion, gameStatus }) => {
   // Create a ref to store the socket connection
   const socketRef = useRef(null);
 
+  // Function to fetch GitHub avatars
+  const fetchGitHubAvatars = async (players) => {
+    if (!Array.isArray(players) || players.length === 0) return;
+    
+    const newAvatarUrls = { ...avatarUrls };
+    const fetchPromises = players
+      .filter(player => player.githubHandle && !avatarUrls[player.githubHandle])
+      .map(async (player) => {
+        try {
+          // GitHub API to get user avatar
+          const response = await axios.get(`https://api.github.com/users/${player.githubHandle}`);
+          if (response.data && response.data.avatar_url) {
+            newAvatarUrls[player.githubHandle] = response.data.avatar_url;
+          }
+        } catch (error) {
+          console.error(`Error fetching avatar for ${player.githubHandle}:`, error);
+          // No need to throw - we'll just use the default avatar
+        }
+      });
+    
+    await Promise.allSettled(fetchPromises);
+    setAvatarUrls(newAvatarUrls);
+  };
+
   useEffect(() => {
     const socket = io('/', {
       reconnection: true,
@@ -80,8 +104,12 @@ const GameShowView = ({ currentQuestion: propQuestion, gameStatus }) => {
           setWinners([]);
           setHostQuip(`${data.quip}\nThe correct answer was: ${data.correctAnswer}`);
         } else {
-          setWinners(Array.isArray(data.winner) ? data.winner : [data.winner]);
+          const winnersList = Array.isArray(data.winner) ? data.winner : [data.winner];
+          setWinners(winnersList);
           setHostQuip(data.quip);
+          
+          // Fetch avatars for winners immediately
+          fetchGitHubAvatars(winnersList.map(w => ({ githubHandle: w })));
         }
       } catch (error) {
         console.error('Error handling round complete:', error);
@@ -93,25 +121,36 @@ const GameShowView = ({ currentQuestion: propQuestion, gameStatus }) => {
       try {
         setGameOver(true);
         setGameStarted(false);
-        setFinalWinners(Array.isArray(data.winners) ? data.winners : [data.winners]);
+        const winnersList = Array.isArray(data.winners) ? data.winners : [data.winners];
+        setFinalWinners(winnersList);
         setFinalScores(data.finalScores);
-        setHostQuip(data.quip);
+        setHostQuip(data.goodbyeQuip || data.quip); // Ensure goodbyeQuip is used if available
+        
+        // Fetch avatars for final winners immediately
+        fetchGitHubAvatars(winnersList.map(w => ({ githubHandle: w })));
 
-        const goodbyeResponse = await axios.get('/api/goodbyeQuip');
-        if (mounted) {
-          setGoodbyeQuip(goodbyeResponse.data.quip);
+        try {
+          const goodbyeResponse = await axios.get('/api/goodbyeQuip');
+          if (mounted) {
+            setGoodbyeQuip(goodbyeResponse.data.quip);
+          }
+        } catch (error) {
+          console.error('Error fetching goodbye quip:', error);
+          if (mounted) {
+            // Don't break the game flow for this error, just use a fallback
+            setGoodbyeQuip("That's all folks! See you next time!");
+          }
         }
       } catch (error) {
         console.error('Error handling game over:', error);
-        if (mounted) {
-          setGoodbyeQuip("That's all folks! See you next time!");
-        }
       }
     };
 
     const handlePlayerRegistered = (players) => {
       if (!mounted) return;
       setRegisteredPlayers(players);
+      // Fetch avatars for new players
+      fetchGitHubAvatars(players);
     };
 
     const handlePlayerAnswered = (data) => {
@@ -129,6 +168,11 @@ const GameShowView = ({ currentQuestion: propQuestion, gameStatus }) => {
       setGameOver(!state.gameStarted && state.hasEnded);
       setFinalScores(state.playerScores || {});
       setRegisteredPlayers(state.registeredPlayers || []);
+      
+      // Fetch avatars for all players when reconnecting
+      if (state.registeredPlayers && state.registeredPlayers.length > 0) {
+        fetchGitHubAvatars(state.registeredPlayers);
+      }
     };
 
     const fetchInitialData = async () => {
@@ -142,6 +186,9 @@ const GameShowView = ({ currentQuestion: propQuestion, gameStatus }) => {
           setRegisteredPlayers(playersResponse.data.players);
           setWelcomeQuip(welcomeResponse.data.quip);
           setError(null);
+          
+          // Fetch avatars for initial players
+          fetchGitHubAvatars(playersResponse.data.players);
         }
       } catch (error) {
         console.error('Error fetching initial data:', error);
@@ -193,6 +240,20 @@ const GameShowView = ({ currentQuestion: propQuestion, gameStatus }) => {
       setGameStarted(false);
     }
   }, [gameStatus]);
+
+  // Effect to fetch avatars when winners change
+  useEffect(() => {
+    if (winners.length > 0) {
+      fetchGitHubAvatars(winners.map(handle => ({ githubHandle: handle })));
+    }
+  }, [winners]);
+
+  // Effect to fetch avatars when final winners change
+  useEffect(() => {
+    if (finalWinners.length > 0) {
+      fetchGitHubAvatars(finalWinners.map(handle => ({ githubHandle: handle })));
+    }
+  }, [finalWinners]);
 
   if (error) {
     return (

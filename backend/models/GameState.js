@@ -138,23 +138,30 @@ export default class GameState {
     if (!this.gameStarted) {
       throw new Error('Game has not started');
     }
-
     if (this.playerAnswers[playerName]) {
       throw new Error('Player has already answered');
     }
 
+    // Store the player's answer
     this.playerAnswers[playerName] = answer;
-    if (answer === this.currentQuestion.correctAnswer) {
+    
+    // Check if answer is correct and update score
+    const isCorrect = answer === this.currentQuestion.correctAnswer;
+    if (isCorrect) {
       this.playerScores[playerName] = (this.playerScores[playerName] || 0) + 1;
     }
-
-    const allPlayersAnswered = Object.keys(this.playerAnswers).length === this.registeredPlayers.length;
-
+    
+    // Check if all registered players have answered
+    const allPlayersAnswered = this.registeredPlayers.length > 0 && 
+      Object.keys(this.playerAnswers).length === this.registeredPlayers.length;
+    
     await this.persistState();
-
+    
     return {
       roundComplete: allPlayersAnswered,
-      winner: answer === this.currentQuestion.correctAnswer ? playerName : null,
+      winner: isCorrect ? playerName : null,
+      isCorrect: isCorrect,
+      score: this.playerScores[playerName] || 0,
       scores: this.playerScores,
       correctAnswer: allPlayersAnswered ? this.currentQuestion.correctAnswer : null
     };

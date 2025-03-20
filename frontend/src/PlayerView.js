@@ -62,8 +62,12 @@ const PlayerView = () => {
     const handleAnswerResult = (result) => {
       if (!mounted) return;
       if (result.success) {
-        showErrorToast(result.correct ? 'Correct answer!' : 'Wrong answer');
-        setScore(result.score || score);
+        if (result.correct) {
+          showErrorToast('Correct answer!');
+          setScore(result.score || score);
+        } else {
+          showErrorToast('Wrong answer');
+        }
       } else {
         showErrorToast(result.error || 'Failed to submit answer');
         setHasAnswered(false);
