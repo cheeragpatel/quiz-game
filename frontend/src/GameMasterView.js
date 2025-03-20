@@ -17,6 +17,11 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   const [responseStatus, setResponseStatus] = useState({});
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [retryTimeout, setRetryTimeout] = useState(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [totalQuestions, setTotalQuestions] = useState(0);
+  const [allPlayersAnswered, setAllPlayersAnswered] = useState(false);
 
   const socket = useMemo(() => io(), []);
 
@@ -56,6 +61,18 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
       setWinner(data.winner);
       setHostQuip(data.quip);
       setScores(data.scores);
+      setAllPlayersAnswered(true);
+      
+      // Update question tracking if the server sent this info
+      if (data.currentQuestionIndex !== undefined && data.totalQuestions !== undefined) {
+        setCurrentQuestionIndex(data.currentQuestionIndex);
+        setTotalQuestions(data.totalQuestions);
+      }
+      
+      // If this is the last question, show a message that the game will end soon
+      if (data.isLastQuestion) {
+        showErrorToast('Last question completed - game will end automatically');
+      }
     };
 
     const handleGameOver = (data) => {
@@ -77,10 +94,12 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
       }));
     };
 
-    const handleNewQuestion = () => {
+    const handleNewQuestion = (question) => {
       setResponseStatus({});
       setWinner(null);
       setHostQuip('');
+      setAllPlayersAnswered(false);
+      setCurrentQuestionIndex(prevIndex => prevIndex + 1);
     };
 
     socket.on('roundComplete', handleRoundComplete);
@@ -96,7 +115,7 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
       socket.off('playerAnswered', handlePlayerAnswered);
       socket.off('newQuestion', handleNewQuestion);
     };
-  }, [setGameStatus, socket]);
+  }, [setGameStatus, socket, currentQuestionIndex, totalQuestions]);
 
   const handleNumQuestionsChange = (e) => {
     const value = parseInt(e.target.value, 10);
@@ -128,6 +147,8 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
       });
       setGameStatus('started');
       setCurrentQuestion(response.data.currentQuestion);
+      setCurrentQuestionIndex(0);
+      setTotalQuestions(numQuestions);
       setError(null);
     } catch (error) {
       console.error('Error starting game:', error);
@@ -156,21 +177,78 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   const nextQuestion = async () => {
     setIsLoading(true);
     try {
+      // Clear any existing retry timeout
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+        setRetryTimeout(null);
+      }
+      
       const response = await axios.post('/api/nextQuestion');
       setCurrentQuestion(response.data);
       setWinner(null);
       setHostQuip('');
       setError(null);
+      setRetryCount(0);
     } catch (error) {
       console.error('Error fetching next question:', error);
-      showErrorToast(getErrorMessage(error));
-      setError('Failed to get next question');
+      
+      // Handle rate limiting (429 Too Many Requests)
+      if (error.response && error.response.status === 429) {
+        const retryAfter = error.response.headers['retry-after'] || 2;
+        const retryMs = parseInt(retryAfter, 10) * 1000 || 2000;
+        
+        showErrorToast(`Rate limited. Automatically retrying in ${retryAfter} seconds...`);
+        setError(`Rate limited. Waiting ${retryAfter} seconds before retrying automatically... (Attempt ${retryCount + 1})`);
+        
+        // Set up automatic retry with exponential backoff
+        const timeoutId = setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          nextQuestion();
+        }, retryMs);
+        
+        setRetryTimeout(timeoutId);
+      }
+      // Check if we've reached the end of available questions
+      else if (error.response && error.response.data && 
+          error.response.data.error && 
+          error.response.data.error.includes('No more questions available')) {
+        // Handle end of questions gracefully - automatically end the game
+        try {
+          showErrorToast('All questions completed - ending the game');
+          await endGame();
+        } catch (endGameError) {
+          console.error('Error ending game:', endGameError);
+          showErrorToast(getErrorMessage(endGameError));
+          setError('Failed to end game after completing all questions');
+        }
+      } else {
+        showErrorToast(getErrorMessage(error));
+        setError('Failed to get next question');
+      }
     } finally {
-      setIsLoading(false);
+      if (!retryTimeout) {
+        setIsLoading(false);
+      }
     }
   };
 
+  // Make sure to clean up any timeouts when unmounting
+  useEffect(() => {
+    return () => {
+      if (retryTimeout) {
+        clearTimeout(retryTimeout);
+      }
+    };
+  }, [retryTimeout]);
+
   const newGame = () => {
+    // Clear any existing retry timeout
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      setRetryTimeout(null);
+    }
+    setRetryCount(0);
+    
     setGameOver(false);
     setWinner(null);
     setHostQuip('');
@@ -182,6 +260,13 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
   };
 
   const resetGame = async () => {
+    // Clear any existing retry timeout
+    if (retryTimeout) {
+      clearTimeout(retryTimeout);
+      setRetryTimeout(null);
+    }
+    setRetryCount(0);
+    
     setIsLoading(true);
     try {
       await axios.post('/api/resetGame');
@@ -242,6 +327,9 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
     return (
       <div>
         <h2>Game in Progress</h2>
+        <div className="game-progress">
+          Question {currentQuestionIndex + 1} of {totalQuestions}
+        </div>
         <ResponseStatus players={players || []} responseStatus={responseStatus || {}} />
         <PlayerStatus players={players || []} responseStatus={responseStatus || {}} />
 
@@ -255,9 +343,11 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
           <button 
             className="game-show-button" 
             onClick={nextQuestion}
-            disabled={isLoading}
+            disabled={isLoading || (currentQuestionIndex >= totalQuestions - 1 && allPlayersAnswered)}
           >
-            {isLoading ? 'Loading...' : 'Next Question'}
+            {isLoading ? 'Loading...' : 
+              (currentQuestionIndex >= totalQuestions - 1 && allPlayersAnswered) ? 
+              'Final Question Complete' : 'Next Question'}
           </button>
           <button 
             className="game-show-button" 
@@ -272,6 +362,9 @@ const GameMasterView = ({ setCurrentQuestion, setGameStatus, gameStatus }) => {
           <div className="game-show-winner">
             <h3>Round Winner: {winner}</h3>
             <p>{hostQuip}</p>
+            {currentQuestionIndex >= totalQuestions - 1 && allPlayersAnswered && (
+              <p className="ending-notice">Game will end automatically in a few moments...</p>
+            )}
           </div>
         )}
       </div>

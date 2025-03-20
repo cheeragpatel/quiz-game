@@ -20,6 +20,27 @@ import { generateHostQuip, generateGoodbyeQuip, generateIntroductionQuip } from 
 
 // Export function that sets up all routes
 export default function setupRoutes(app, io, gameState) {
+  // Configure rate limiters
+  const standardLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute window
+    max: 30, // Limit each IP to 30 requests per window
+    message: 'Too many requests, please try again later.',
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  });
+  
+  const nextQuestionLimiter = rateLimit({
+    windowMs: 5 * 1000, // 5 seconds window
+    max: 3, // Limit each IP to 3 requests per 5-second window
+    message: 'Too many question requests, please wait a moment.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    headers: true,
+  });
+  
+  // Apply standard rate limiter to all routes
+  app.use(standardLimiter);
+
   // Host quips routes
   app.get('/api/welcomeQuip', asyncHandler(async (req, res) => {
     try {
@@ -59,40 +80,47 @@ export default function setupRoutes(app, io, gameState) {
     }
 
     try {
-      // Generate first question and quips
-      const [questions, introQuip, welcomeQuip] = await Promise.all([
-        generateQuestions(topics[0], 1),
+      console.log(`Generating ${numQuestions} questions for topics: ${topics.join(', ')}`);
+      
+      // Generate all questions at once and quips
+      const [allQuestions, introQuip, welcomeQuip] = await Promise.all([
+        generateQuestions(topics[0], numQuestions),
         generateIntroductionQuip(),
         generateHostQuip('game start', 'everyone')
       ]);
 
-      const question = questions[0];
+      if (allQuestions.length === 0) {
+        throw new Error('Failed to generate questions');
+      }
 
-      // Update game state
+      // Update game state with all questions
       gameState.gameStarted = true;
       gameState.gameTopics = topics;
-      gameState.totalQuestions = numQuestions;
+      gameState.totalQuestions = allQuestions.length;
       gameState.currentQuestionIndex = 0;
-      gameState.questionsList = [question];
-      gameState.currentQuestion = question;
+      gameState.questionsList = allQuestions;
+      gameState.currentQuestion = allQuestions[0];
       gameState.playerScores = {};
       gameState.playerAnswers = {};
+      
+      console.log(`Successfully generated ${allQuestions.length} questions`);
       
       await gameState.persistState();
       
       io.emit('gameStarted', {
-        currentQuestion: question,
+        currentQuestion: gameState.currentQuestion,
         introQuip,
         welcomeQuip
       });
 
       res.json({
         success: true,
-        currentQuestion: question,
+        currentQuestion: gameState.currentQuestion,
         introQuip,
         welcomeQuip
       });
     } catch (error) {
+      console.error('Error starting game:', error);
       gameState.reset();
       throw error;
     }
@@ -104,11 +132,25 @@ export default function setupRoutes(app, io, gameState) {
     }
 
     const finalWinners = getWinnersForState(gameState);
-    const gameOverQuip = await generateHostQuip('game over', finalWinners);
+    let gameOverQuip = '';
 
+    try {
+      // Try to generate a quip, but don't fail if we can't
+      gameOverQuip = await generateHostQuip('game over', finalWinners);
+    } catch (error) {
+      console.error('Error generating game over quip:', error);
+      // Fallback message if API call fails
+      const winnerText = finalWinners.length > 1 
+        ? `${finalWinners.join(' and ')} are our champions!` 
+        : `${finalWinners[0]} is our champion!`;
+      gameOverQuip = `That's a wrap, folks! ${winnerText} Thanks for playing!`;
+    }
+
+    // Send game over event to all clients
     io.emit('gameOver', {
       winners: finalWinners,
       quip: gameOverQuip,
+      goodbyeQuip: "Thanks for playing everyone! See you next time!",
       finalScores: gameState.playerScores
     });
 
@@ -122,7 +164,8 @@ export default function setupRoutes(app, io, gameState) {
     });
   }));
 
-  app.post('/api/nextQuestion', asyncHandler(async (req, res) => {
+  // Override with specific rate limiter for nextQuestion route
+  app.post('/api/nextQuestion', nextQuestionLimiter, asyncHandler(async (req, res) => {
     if (!gameState.gameStarted) {
       throw new StateError('Game has not started yet');
     }
@@ -133,12 +176,25 @@ export default function setupRoutes(app, io, gameState) {
     if (gameState.currentQuestionIndex >= gameState.totalQuestions) {
       // Game over
       const finalWinners = getWinnersForState(gameState);
-      const gameOverQuip = await generateHostQuip('game over', finalWinners);
+      let gameOverQuip = '';
+
+      try {
+        // Try to generate a quip, but don't fail if we can't
+        gameOverQuip = await generateHostQuip('game over', finalWinners);
+      } catch (error) {
+        console.error('Error generating game over quip:', error);
+        // Fallback message if API call fails
+        const winnerText = finalWinners.length > 1 
+          ? `${finalWinners.join(' and ')} are our champions!` 
+          : `${finalWinners[0]} is our champion!`;
+        gameOverQuip = `That's a wrap, folks! ${winnerText} Thanks for playing!`;
+      }
 
       // Emit 'gameOver' event with winners and final scores
       io.emit('gameOver', {
         winners: finalWinners,
         quip: gameOverQuip,
+        goodbyeQuip: "Thanks for playing everyone! See you next time!",
         finalScores: gameState.playerScores
       });
 
@@ -150,13 +206,10 @@ export default function setupRoutes(app, io, gameState) {
         winners: finalWinners
       });
     } else {
-      // Continue to next question
-      const [questions] = await Promise.all([
-        generateQuestions(gameState.gameTopics[0], 1)
-      ]);
-      const newQuestion = questions[0];
+      // Get the next question from the pre-generated question list
+      const newQuestion = gameState.questionsList[gameState.currentQuestionIndex];
       
-      gameState.questionsList.push(newQuestion);
+      // Update the current question and reset player answers
       gameState.currentQuestion = newQuestion;
       gameState.playerAnswers = {};
 
@@ -191,13 +244,69 @@ export default function setupRoutes(app, io, gameState) {
         result.winner ? 'correct answer' : 'wrong answer',
         result.winner
       );
-
+      
+      // Send additional game progress info with the roundComplete event
       io.emit('roundComplete', {
         winner: result.winner,
         quip: hostQuip,
         scores: result.scores,
-        correctAnswer: result.correctAnswer
+        correctAnswer: result.correctAnswer,
+        currentQuestionIndex: gameState.currentQuestionIndex,
+        totalQuestions: gameState.totalQuestions,
+        isLastQuestion: gameState.currentQuestionIndex >= gameState.totalQuestions - 1
       });
+
+      // Only automatically advance if not the last question
+      if (gameState.currentQuestionIndex < gameState.totalQuestions - 1) {
+        setTimeout(async () => {
+          try {
+            const response = await fetch(`${req.protocol}://${req.get('host')}/api/nextQuestion`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            
+            if (!response.ok) {
+              console.error('Failed to advance to next question automatically');
+            }
+          } catch (error) {
+            console.error('Error advancing to next question:', error);
+          }
+        }, 5000); // 5-second delay before advancing to next question
+      } 
+      // If it's the last question, auto-end the game after a delay
+      else {
+        setTimeout(async () => {
+          try {
+            // End the game automatically after the last question
+            const finalWinners = getWinnersForState(gameState);
+            let gameOverQuip = '';
+            
+            try {
+              gameOverQuip = await generateHostQuip('game over', finalWinners);
+            } catch (error) {
+              console.error('Error generating game over quip:', error);
+              const winnerText = finalWinners.length > 1 
+                ? `${finalWinners.join(' and ')} are our champions!` 
+                : `${finalWinners[0]} is our champion!`;
+              gameOverQuip = `That's a wrap, folks! ${winnerText} Thanks for playing!`;
+            }
+            
+            // Emit 'gameOver' event with winners and final scores
+            io.emit('gameOver', {
+              winners: finalWinners,
+              quip: gameOverQuip,
+              goodbyeQuip: "Thanks for playing everyone! See you next time!",
+              finalScores: gameState.playerScores
+            });
+            
+            gameState.gameStarted = false;
+            await gameState.persistState();
+            
+          } catch (error) {
+            console.error('Error ending game automatically:', error);
+          }
+        }, 8000); // Slightly longer delay (8 seconds) before ending the game
+      }
     }
 
     await gameState.persistState();

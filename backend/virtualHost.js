@@ -2,18 +2,77 @@ import OpenAI from 'openai';
 import { ValidationError, GameError } from './utils/errorHandler.js';
 
 const token = process.env["OPENAI_API_KEY"];
-const endpoint = "https://api.openai.com/v1";
+const endpoint = process.env['OPENAI_API_ENDPOINT']
 const modelName = "gpt-4o";  // Restored original model name
+
+// Retry configuration
+const MAX_RETRIES = 5;
+const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 30000;
 
 // Validate environment variables
 if (!token) {
   throw new Error('OPENAI_API_KEY environment variable is required');
+}
+if (!endpoint){
+  throw new Error('OPENAI_API_ENDPOINT environment variable is required');
 }
 
 const openai = new OpenAI({
   apiKey: token,
   baseURL: endpoint,
 });
+
+/**
+ * Sleep function for implementing delays
+ * @param {number} ms - milliseconds to sleep
+ * @returns {Promise} - resolves after the specified time
+ */
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Makes an API call with retry logic for rate limiting
+ * @param {Function} apiCall - Function that makes the actual API call
+ * @returns {Promise} - Result of the API call
+ */
+async function callWithRetry(apiCall) {
+  let retries = 0;
+  const MAX_RETRIES = parseInt(process.env.API_MAX_RETRIES || '5', 10);
+  let delay = INITIAL_RETRY_DELAY_MS;
+  
+  while (true) {
+    try {
+      return await apiCall();
+    } catch (error) {
+      // Enhanced error logging
+      console.error(`API call failed:`, {
+        status: error.status || (error.response && error.response.status),
+        message: error.message,
+        code: error.code
+      });
+      
+      // Check if we've hit rate limits (429) or if it's a server error (5xx)
+      const errorStatus = error.status || (error.response && error.response.status);
+      const shouldRetry = errorStatus === 429 || (errorStatus >= 500 && errorStatus < 600);
+      
+      if (!shouldRetry || retries >= MAX_RETRIES) {
+        // Better error propagation
+        const enhancedError = new Error(`API request failed: ${error.message}`);
+        enhancedError.originalError = error;
+        enhancedError.isRateLimit = errorStatus === 429;
+        throw enhancedError;
+      }
+      
+      // Exponential backoff with jitter
+      console.log(`Rate limit hit or server error (${errorStatus}). Retrying in ${delay}ms... (Attempt ${retries + 1}/${MAX_RETRIES})`);
+      await sleep(delay);
+      
+      // Increase delay for next retry (exponential backoff with jitter)
+      delay = Math.min(delay * 2 * (0.9 + Math.random() * 0.2), MAX_RETRY_DELAY_MS);
+      retries++;
+    }
+  }
+}
 
 const baseSystemPrompt = "You are a 70's game show host named Mona Woolery in the style of Bob Barker and Chuck Woolery. Keep responses concise and under 200 characters.";
 
@@ -30,15 +89,17 @@ async function generateHostResponse(prompt) {
   }
 
   try {
-    const response = await openai.chat.completions.create({
-      model: modelName,
-      messages: [
-        { role: "system", content: baseSystemPrompt },
-        { role: "user", content: prompt }
-      ],
-      max_tokens: 50,
-      temperature: 1.0,
-      top_p: 1.0,
+    const response = await callWithRetry(async () => {
+      return await openai.chat.completions.create({
+        model: modelName,
+        messages: [
+          { role: "system", content: baseSystemPrompt },
+          { role: "user", content: prompt }
+        ],
+        max_tokens: 50,
+        temperature: 1.0,
+        top_p: 1.0,
+      });
     });
 
     if (!response.choices?.[0]?.message?.content) {
@@ -52,7 +113,9 @@ async function generateHostResponse(prompt) {
       throw error;
     }
     console.error('Error generating host response:', error);
-    throw new GameError('Failed to generate host response: ' + error.message);
+    
+    // Return fallback response if API fails after retries
+    return "And that's the way the cookie crumbles, folks!";
   }
 }
 
@@ -95,7 +158,16 @@ async function generateHostQuip(context, winners) {
       throw error;
     }
     console.error('Error generating host quip:', error);
-    throw new GameError('Failed to generate host quip: ' + error.message);
+    
+    // Return fallback response if API fails
+    if (context === 'no winners') {
+      return "Wow, that was a tough one! Better luck next time, folks!";
+    } else if (Array.isArray(winners) && winners.length > 1) {
+      return `It's a tie between ${winners.join(' and ')}! What a showdown!`;
+    } else {
+      const winner = Array.isArray(winners) ? winners[0] : winners;
+      return `${winner} got it right! You're on fire!`;
+    }
   }
 }
 
@@ -109,7 +181,7 @@ async function generateGoodbyeQuip() {
     return generateHostResponse("Generate a warm, fun goodbye message to end the game show, mentioning how great everyone played.");
   } catch (error) {
     console.error('Error generating goodbye quip:', error);
-    throw new GameError('Failed to generate goodbye message: ' + error.message);
+    return "That's all for today, folks! Thanks for playing and see you next time!";
   }
 }
 
@@ -123,7 +195,7 @@ async function generateIntroductionQuip() {
     return generateHostResponse("Introduce yourself as the host of this quiz game show with enthusiasm and 70's flair!");
   } catch (error) {
     console.error('Error generating introduction:', error);
-    throw new GameError('Failed to generate introduction: ' + error.message);
+    return "Hello there, beautiful contestants! I'm Mona Woolery, and welcome to our groovy quiz show!";
   }
 }
 

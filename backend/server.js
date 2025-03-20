@@ -41,7 +41,7 @@ app.use(express.json());
 // Apply rate limiting to all requests
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+  max: 1000, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
@@ -118,8 +118,29 @@ process.on('uncaughtException', (error) => {
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
+  // Enhanced error logging for better debugging
+  if (reason instanceof Error) {
+    console.error('Unhandled Rejection:', {
+      message: reason.message,
+      stack: reason.stack,
+      code: reason.code,
+      status: reason.status || (reason.response && reason.response.status),
+      isRateLimit: reason.status === 429 || (reason.response && reason.response.status === 429)
+    });
+  } else {
+    console.error('Unhandled Rejection:', reason);
+  }
+  
+  // Don't exit the process on rate limit errors, just log them
+  if (reason && 
+      ((reason.status === 429) || 
+       (reason.response && reason.response.status === 429) ||
+       (reason.message && reason.message.includes('429')))) {
+    console.error('Rate limit hit. Not crashing server.');
+  } else {
+    // For other critical errors, exit the process
+    process.exit(1);
+  }
 });
 
 // Export for testing

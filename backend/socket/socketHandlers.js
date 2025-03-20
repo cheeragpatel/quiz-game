@@ -3,6 +3,7 @@
  */
 import GameState from '../models/GameState.js';
 import { socketErrorHandler, ValidationError } from '../utils/errorHandler.js';
+import { generateHostQuip } from '../virtualHost.js';
 
 /**
  * Set up Socket.IO event handlers
@@ -48,16 +49,31 @@ export function setupSocketHandlers(io, gameState) {
         }
 
         const result = await gameState.submitAnswer(data.playerName, data.answer);
+        
+        // Send result to the player who submitted the answer
         socket.emit('answerResult', {
           success: true,
-          correct: result.isCorrect,
-          score: result.score
+          correct: result.isCorrect || data.answer === gameState.currentQuestion.correctAnswer,
+          score: result.score || gameState.playerScores[data.playerName]
+        });
+        
+        // Notify game show that a player has answered
+        io.emit('playerAnswered', {
+          playerName: data.playerName
         });
 
         if (result.roundComplete) {
+          // Generate a quip based on whether there was a winner
+          const hostQuip = await generateHostQuip(
+            result.winner ? gameState.currentQuestion.question : 'no winners',
+            result.winner || gameState.currentQuestion.correctAnswer
+          );
+
+          // Broadcast round completion to all clients
           io.emit('roundComplete', {
             winner: result.winner,
-            correctAnswer: result.correctAnswer,
+            quip: hostQuip,
+            correctAnswer: gameState.currentQuestion.correctAnswer,
             scores: gameState.playerScores
           });
         }
